@@ -1,0 +1,95 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Pyre type checker
+.pyre/
+
+# Environments
+.env
+.envrc
+*.env
+*.env.*
+
+# pytest
+.cache/
+
+# PyTorch
+data/
+*.pt
+*.pth
+
+# Data, logs, and models
+*.log
+*.csv
+*.h5
+*.npy
+*.npz
+checkpoint/
+checkpoints/
+logs/
+saved_models/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# MacOS
+.DS_Store
+
+# Ignore backups
+*~
+*.bak
+
+# Ignore downloaded datasets
+datasets/
+
+# Ignore secret files (e.g., API keys)
+*.secret
+
+# Ignore TensorBoard logs
+runs/
+
+# Ignore temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Ignore cache files
+.cache/
