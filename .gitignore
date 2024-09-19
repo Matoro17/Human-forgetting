@@ -1,0 +1,6 @@
+/lightning_logs
+/datasetMestradoGledson
+/data
+
+/__pycache__
+*.pth
