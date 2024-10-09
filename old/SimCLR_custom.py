@@ -48,7 +48,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
-train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', transform=transform)
+train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', transform=transform)
 train_loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=2)
 
 # 3. Data Augmentation Functions for SimCLR

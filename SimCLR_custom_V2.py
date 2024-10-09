@@ -48,7 +48,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # Adjusted normalization for pretrained models
 ])
 
-train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', transform=transform)
+train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', transform=transform)
 train_loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=2)
 
 # 3. Data Augmentation Functions for SimCLR
@@ -193,7 +193,7 @@ all_labels = []
 all_predictions = []
 
 # Separate test set for evaluation
-test_set = CustomDataset(root_dir='./datasetMestradoGledson+gabrielTest', transform=transform)
+test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabrielTest', transform=transform)
 test_loader = DataLoader(test_set, batch_size=256, shuffle=False, num_workers=2)
 
 with torch.no_grad():

@@ -49,7 +49,7 @@ def export_class_counts_to_csv(class_counts, output_file):
                 writer.writerow(['', '', subclass_name, count])
 
 if __name__ == "__main__":
-    dataset_root = './datasetMestradoGledson+gabriel'  # Specify the path to your dataset root
+    dataset_root = '../datasetMestradoGledson+gabriel'  # Specify the path to your dataset root
     output_csv = 'class_counts.csv'  # Specify the output CSV file name
 
     # Count images per class and subclass

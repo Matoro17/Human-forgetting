@@ -13,7 +13,7 @@ def evaluate(model, device, num_classes):
     ])
 
     # Initialize the test set with the transform
-    test_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='test', transform=transform)
+    test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='test', transform=transform)
     test_loader = DataLoader(test_set, batch_size=256, shuffle=False)
 
     model.eval()
@@ -30,3 +30,13 @@ def evaluate(model, device, num_classes):
 
     f1 = f1_score(all_labels, all_predictions, average='weighted')
     return f1
+
+import csv
+
+def save_metrics_to_csv(metrics, filepath):
+    with open(filepath, mode='w') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Metric', 'Value'])
+        for metric, value in metrics.items():
+            writer.writerow([metric, value])
+

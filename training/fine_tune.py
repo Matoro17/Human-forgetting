@@ -13,7 +13,7 @@ def fine_tune(encoder, device, num_classes, num_epochs=10):
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # Normalize using ImageNet stats
     ])
     
-    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train', transform=transform)
+    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='train', transform=transform)
     train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
     
     fine_tune_model = FineTuneModel(encoder, num_classes).to(device)
@@ -35,3 +35,26 @@ def fine_tune(encoder, device, num_classes, num_epochs=10):
     
     torch.save(fine_tune_model.state_dict(), 'checkpoints/fine_tune_model.pth')
     return fine_tune_model
+
+def fine_tune_model(model, dataset):
+    # Freeze earlier layers
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Modify last layer for fine-tuning
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    # Fine-tune the model on the local dataset
+    optimizer = torch.optim.Adam(model.fc.parameters(), lr=1e-4)
+    criterion = nn.CrossEntropyLoss()
+    
+    model.train()
+    for epoch in range(fine_tune_epochs):
+        for batch in dataset:
+            optimizer.zero_grad()
+            outputs = model(batch)
+            loss = criterion(outputs, batch.targets)
+            loss.backward()
+            optimizer.step()
+
+    return model
