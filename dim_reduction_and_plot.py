@@ -19,7 +19,7 @@ transform = transforms.Compose([
 ])
 
 # Load the test dataset
-test_set = CustomDataset(root_dir='./datasetMestradoGledson', transform=transform, split='test')
+test_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', transform=transform, split='test')
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=256, shuffle=False, num_workers=2)
 
 # Load class names

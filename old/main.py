@@ -216,7 +216,7 @@ class CustomImageDataset(Dataset):
 if __name__ == "__main__":
     # Define the configuration
     config = Namespace(
-        data_dir='datasetMestradoGledson/0_Amiloidose/AZAN',
+        data_dir='datasetMestradoGledson+gabriel/0_Amiloidose/AZAN',
         batch_size=128,
         epochs=100,
         warmup_epochs=10,

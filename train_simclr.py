@@ -74,8 +74,8 @@ if __name__ == "__main__":
     ])
     
     # Initialize datasets
-    train_set = CustomDataset(root_dir='./datasetMestradoGledson', transform=transform, split='train')
-    test_set = CustomDataset(root_dir='./datasetMestradoGledson', transform=transform, split='test')
+    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', transform=transform, split='train')
+    test_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', transform=transform, split='test')
 
     # Initialize data loaders
     train_loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=2)

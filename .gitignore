@@ -1,6 +1,7 @@
 /lightning_logs
-/datasetMestradoGledson
+/datasetMestradoGledson+gabriel
 /data
 
-/__pycache__
+__pycache__
 *.pth
+

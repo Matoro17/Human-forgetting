@@ -303,7 +303,7 @@ class ClassificationModel(pl.LightningModule):
 if __name__ == "__main__":
     # Define the configuration
     config_ssl = Namespace(
-        data_dir='datasetMestradoGledson/0_Amiloidose/AZAN',
+        data_dir='datasetMestradoGledson+gabriel/0_Amiloidose/AZAN',
         batch_size=128,
         epochs=100,
         warmup_epochs=10,
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     )
 
     config_finetune = Namespace(
-        data_dir='datasetMestradoGledson',
+        data_dir='datasetMestradoGledson+gabriel',
         batch_size=32,
         epochs=50,
         lr=0.001,
