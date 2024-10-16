@@ -13,7 +13,7 @@ def fine_tune(encoder, device, num_classes, num_epochs=10):
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # Normalize using ImageNet stats
     ])
     
-    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='train', transform=transform)
+    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train', transform=transform)
     train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
     
     fine_tune_model = FineTuneModel(encoder, num_classes).to(device)

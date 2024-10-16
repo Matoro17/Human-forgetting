@@ -12,7 +12,7 @@ def train_byol(device, num_epochs=10):
     byol_model = BYOL(encoder).to(device)
     optimizer = optim.Adam(byol_model.parameters(), lr=0.0003)
     
-    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='train')
+    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train')
     byol_train_set = SimCLRTransform()(train_set)
     byol_train_loader = DataLoader(byol_train_set, batch_size=256, shuffle=True)
 

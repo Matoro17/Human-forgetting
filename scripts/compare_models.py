@@ -16,7 +16,7 @@ from custom_dataset import CustomDataset
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_classes = len(CustomDataset(root_dir='../datasetMestradoGledson+gabriel').classes)
+    num_classes = len(CustomDataset(root_dir='./datasetMestradoGledson+gabriel').classes)
     
     # 1. Train SimCLR
     simclr_encoder = train_simclr(device)

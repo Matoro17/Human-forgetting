@@ -12,7 +12,7 @@ def train_simclr(device, num_epochs=10):
     simclr_model = ProjectionHead(encoder).to(device)
     optimizer = optim.Adam(simclr_model.parameters(), lr=0.0003)
     
-    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='train')
+    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train')
     simclr_train_set = SimCLRDataset(train_set)  # Wrap with SimCLRDataset to apply augmentations
     simclr_train_loader = DataLoader(simclr_train_set, batch_size=256, shuffle=True)
 

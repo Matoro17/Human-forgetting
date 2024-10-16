@@ -12,7 +12,7 @@ def train_dino(device, num_epochs=10):
     dino_model = DINO(encoder).to(device)
     optimizer = optim.Adam(dino_model.parameters(), lr=0.0003)
     
-    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='train')
+    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train')
     dino_train_set = SimCLRTransform()(train_set)
     dino_train_loader = DataLoader(dino_train_set, batch_size=256, shuffle=True)
 

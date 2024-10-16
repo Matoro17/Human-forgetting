@@ -13,7 +13,7 @@ def evaluate(model, device, num_classes):
     ])
 
     # Initialize the test set with the transform
-    test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='test', transform=transform)
+    test_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='test', transform=transform)
     test_loader = DataLoader(test_set, batch_size=256, shuffle=False)
 
     model.eval()
