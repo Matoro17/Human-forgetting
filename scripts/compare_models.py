@@ -54,7 +54,7 @@ def main():
     print("\nComparison of F1 Scores:")
     print(f"SimCLR: {simclr_f1}")
     print(f"BYOL: {byol_f1}")
-    print(f"DINO: {dino_f1}")
+    # print(f"DINO: {dino_f1}")
     print(f"Baseline: {baseline_f1}")
 
 if __name__ == "__main__":
