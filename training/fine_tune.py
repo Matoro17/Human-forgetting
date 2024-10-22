@@ -5,6 +5,15 @@ from models.fine_tune_model import FineTuneModel
 from datasets.custom_dataset import CustomDataset
 from torchvision import transforms
 
+
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def fine_tune(encoder, device, num_classes, num_epochs=10):
     # Define transformations, including conversion to tensor
     transform = transforms.Compose([
@@ -13,7 +22,7 @@ def fine_tune(encoder, device, num_classes, num_epochs=10):
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # Normalize using ImageNet stats
     ])
     
-    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train', transform=transform)
+    train_set = CustomDataset(root_dir=DATASET_DIR, split='train', transform=transform)
     train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
     
     fine_tune_model = FineTuneModel(encoder, num_classes).to(device)

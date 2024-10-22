@@ -7,12 +7,20 @@ from datasets.custom_dataset import CustomDataset
 from utils.augmentations import SimCLRDataset
 from utils.losses import contrastive_loss
 
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def train_simclr(device, num_epochs=10):
     encoder = Encoder().to(device)
     simclr_model = ProjectionHead(encoder).to(device)
     optimizer = optim.Adam(simclr_model.parameters(), lr=0.0003)
     
-    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train')
+    train_set = CustomDataset(root_dir=DATASET_DIR, split='train')
     simclr_train_set = SimCLRDataset(train_set)  # Wrap with SimCLRDataset to apply augmentations
     simclr_train_loader = DataLoader(simclr_train_set, batch_size=256, shuffle=True)
 

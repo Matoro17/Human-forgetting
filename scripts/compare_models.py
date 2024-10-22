@@ -14,9 +14,17 @@ from models.encoder import Encoder
 
 from custom_dataset import CustomDataset
 
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_classes = len(CustomDataset(root_dir='./datasetMestradoGledson+gabriel').classes)
+    num_classes = len(CustomDataset(root_dir=DATASET_DIR).classes)
     
     # 1. Train SimCLR
     simclr_encoder = train_simclr(device)
@@ -30,11 +38,11 @@ def main():
     byol_f1 = evaluate(byol_fine_tuned_model, device, num_classes)
     print(f'BYOL F1 Score: {byol_f1}')
     
-    # 3. Train DINO
-    dino_encoder = train_dino(device)
-    dino_fine_tuned_model = fine_tune(dino_encoder, device, num_classes)
-    dino_f1 = evaluate(dino_fine_tuned_model, device, num_classes)
-    print(f'DINO F1 Score: {dino_f1}')
+    # # 3. Train DINO
+    # dino_encoder = train_dino(device)
+    # dino_fine_tuned_model = fine_tune(dino_encoder, device, num_classes)
+    # dino_f1 = evaluate(dino_fine_tuned_model, device, num_classes)
+    # print(f'DINO F1 Score: {dino_f1}')
     
     # 4. Train Baseline (no SSL)
     baseline_encoder = Encoder().to(device)

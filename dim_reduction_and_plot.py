@@ -1,4 +1,5 @@
 import torch
+import os
 import torchvision.transforms as transforms
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -7,6 +8,14 @@ import numpy as np
 from custom_dataset import CustomDataset
 from simclr_model import Encoder, ProjectionHead, FineTuneModel
 from torchvision.models import ResNet18_Weights
+
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
 
 # Define device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -19,7 +28,7 @@ transform = transforms.Compose([
 ])
 
 # Load the test dataset
-test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', transform=transform, split='test')
+test_set = CustomDataset(root_dir=DATASET_DIR, transform=transform, split='test')
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=256, shuffle=False, num_workers=2)
 
 # Load class names

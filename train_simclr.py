@@ -7,6 +7,14 @@ from sklearn.metrics import f1_score
 from simclr_model import Encoder, ProjectionHead
 from custom_dataset import CustomDataset
 
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 # Data Augmentation for SimCLR
 class SimCLRTransform:
     def __init__(self, s=0.5):
@@ -74,8 +82,8 @@ if __name__ == "__main__":
     ])
     
     # Initialize datasets
-    train_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', transform=transform, split='train')
-    test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', transform=transform, split='test')
+    train_set = CustomDataset(root_dir=DATASET_DIR, transform=transform, split='train')
+    test_set = CustomDataset(root_dir=DATASET_DIR, transform=transform, split='test')
 
     # Initialize data loaders
     train_loader = DataLoader(train_set, batch_size=256, shuffle=True, num_workers=2)

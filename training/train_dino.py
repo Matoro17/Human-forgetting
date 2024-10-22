@@ -7,12 +7,20 @@ from datasets.custom_dataset import CustomDataset
 from utils.augmentations import SimCLRTransform  # Reusing the SimCLRTransform for data augmentation
 from utils.losses import dino_loss
 
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def train_dino(device, num_epochs=10):
     encoder = Encoder().to(device)
     dino_model = DINO(encoder).to(device)
     optimizer = optim.Adam(dino_model.parameters(), lr=0.0003)
     
-    train_set = CustomDataset(root_dir='./datasetMestradoGledson+gabriel', split='train')
+    train_set = CustomDataset(root_dir=DATASET_DIR, split='train')
     dino_train_set = SimCLRTransform()(train_set)
     dino_train_loader = DataLoader(dino_train_set, batch_size=256, shuffle=True)
 
