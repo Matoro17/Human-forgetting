@@ -1,41 +1,82 @@
+import os
 import torch
 import torch.optim as optim
+import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from models.dino import DINO
-from models.encoder import Encoder
-from datasets.custom_dataset import CustomDataset
-from utils.augmentations import SimCLRTransform  # Reusing the SimCLRTransform for data augmentation
-from utils.losses import dino_loss
+from custom_dataset import CustomDataset
+from utils import save_model
+from dotenv import load_dotenv
 
-import os
-from dotenv import load_dotenv  # Import dotenv to load .env files
-
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 100))
+EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10))
+EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
 
-def train_dino(device, num_epochs=10):
-    encoder = Encoder().to(device)
-    dino_model = DINO(encoder).to(device)
-    optimizer = optim.Adam(dino_model.parameters(), lr=0.0003)
+def train_dino(device):
+    # Define data transformation
+    transform = transforms.Compose([
+        transforms.RandomResizedCrop(size=224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
     
-    train_set = CustomDataset(root_dir=DATASET_DIR, split='train')
-    dino_train_set = SimCLRTransform()(train_set)
-    dino_train_loader = DataLoader(dino_train_set, batch_size=256, shuffle=True)
-
-    for epoch in range(num_epochs):
+    # Load custom dataset
+    train_dataset = CustomDataset(root_dir=DATASET_DIR, transform=transform, split='train')
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    
+    # Initialize DINO model
+    dino_model = DINO().to(device)
+    optimizer = optim.Adam(dino_model.student.parameters(), lr=0.0003)
+    
+    # Early stopping parameters
+    best_loss = float('inf')
+    epochs_no_improve = 0
+    
+    # Training loop
+    for epoch in range(NUM_EPOCHS):
         dino_model.train()
-        running_loss = 0.0
-        for x_i, x_j in dino_train_loader:
-            x_i, x_j = x_i.to(device), x_j.to(device)
+        total_loss = 0
+        for images, _ in train_loader:
+            images = images.to(device)
+            
+            # Forward pass through the model
+            student_output, teacher_output = dino_model(images)
+            
+            # Calculate the DINO loss
+            loss = dino_model.loss(student_output, teacher_output)
+            
+            # Backward pass and optimization
             optimizer.zero_grad()
-            student_proj1, student_proj2, teacher_proj1, teacher_proj2 = dino_model(x_i, x_j)
-            loss = dino_loss(student_proj1, student_proj2, teacher_proj1, teacher_proj2)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
-        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(dino_train_loader)}')
+            
+            # Update teacher weights using momentum
+            dino_model.update_teacher()
+            
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Loss: {avg_loss:.4f}")
+        
+        # Early stopping logic
+        if avg_loss < best_loss - EARLY_STOPPING_DELTA:
+            best_loss = avg_loss
+            epochs_no_improve = 0
+            # save_model(dino_model, optimizer, epoch, 'training/dino_best_checkpoint.pth')
+        else:
+            epochs_no_improve += 1
+        
+        if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+            print("Early stopping triggered")
+            break
+    
+    return dino_model.student
 
-    torch.save(dino_model.state_dict(), 'checkpoints/dino/dino_model.pth')
-    return encoder  # Return the trained encoder for fine-tuning
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_dino(device)
