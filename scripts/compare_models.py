@@ -11,7 +11,7 @@ from training.train_dino import train_dino
 from training.fine_tune import fine_tune
 from utils.evaluation import evaluate
 from models.encoder import Encoder
-from custom_dataset import CustomDataset
+from datasets.custom_dataset import CustomDataset
 from dotenv import load_dotenv
 import logging
 

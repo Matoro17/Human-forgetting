@@ -4,7 +4,7 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from models.dino import DINO
-from custom_dataset import CustomDataset
+from datasets.custom_dataset import CustomDataset
 from utils import save_model
 from dotenv import load_dotenv
 
