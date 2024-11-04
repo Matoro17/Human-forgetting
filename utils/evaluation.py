@@ -4,6 +4,15 @@ from torch.utils.data import DataLoader
 from datasets.custom_dataset import CustomDataset
 from torchvision import transforms
 
+
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def evaluate(model, device, num_classes):
     # Define the same transformations used during training
     transform = transforms.Compose([
@@ -13,7 +22,7 @@ def evaluate(model, device, num_classes):
     ])
 
     # Initialize the test set with the transform
-    test_set = CustomDataset(root_dir='../datasetMestradoGledson+gabriel', split='test', transform=transform)
+    test_set = CustomDataset(root_dir=DATASET_DIR, split='test', transform=transform)
     test_loader = DataLoader(test_set, batch_size=256, shuffle=False)
 
     model.eval()

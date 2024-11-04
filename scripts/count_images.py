@@ -6,6 +6,15 @@ import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 from datasets.custom_dataset import CustomDataset
 
+
+import os
+from dotenv import load_dotenv  # Import dotenv to load .env files
+
+# Load environment variables from .env file
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
+
 def count_images_per_class(dataset_root):
     # Initialize a dictionary to store class and subclass image counts
     class_counts = {}
@@ -49,7 +58,7 @@ def export_class_counts_to_csv(class_counts, output_file):
                 writer.writerow(['', '', subclass_name, count])
 
 if __name__ == "__main__":
-    dataset_root = '../datasetMestradoGledson+gabriel'  # Specify the path to your dataset root
+    dataset_root = DATASET_DIR  # Specify the path to your dataset root
     output_csv = 'class_counts.csv'  # Specify the output CSV file name
 
     # Count images per class and subclass
