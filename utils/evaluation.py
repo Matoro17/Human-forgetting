@@ -1,16 +1,13 @@
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 from datasets.custom_dataset import CustomDataset
 from torchvision import transforms
-
-
 import os
-from dotenv import load_dotenv  # Import dotenv to load .env files
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
 DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
 
 def evaluate(model, device, num_classes):
@@ -25,6 +22,9 @@ def evaluate(model, device, num_classes):
     test_set = CustomDataset(root_dir=DATASET_DIR, split='test', transform=transform)
     test_loader = DataLoader(test_set, batch_size=256, shuffle=False)
 
+    # Get the class names
+    class_names = test_set.classes
+
     model.eval()
     all_labels = []
     all_predictions = []
@@ -37,15 +37,24 @@ def evaluate(model, device, num_classes):
             all_labels.extend(labels.cpu().numpy())
             all_predictions.extend(predicted.cpu().numpy())
 
-    f1 = f1_score(all_labels, all_predictions, average='weighted')
-    return f1
+    # Generate a classification report
+    report = classification_report(all_labels, all_predictions, target_names=class_names, output_dict=True)
+    # Extract F1 scores for each class
+    f1_per_class = {class_names[i]: report[class_names[i]]['f1-score'] for i in range(num_classes)}
+    macro_f1 = report['macro avg']['f1-score']
+    weighted_f1 = report['weighted avg']['f1-score']
+
+    # Optionally, save these metrics to a file
+    save_metrics_to_csv(f1_per_class, 'per_class_f1_scores.csv')
+    
+    return f1_per_class, macro_f1, weighted_f1
+
 
 import csv
 
 def save_metrics_to_csv(metrics, filepath):
     with open(filepath, mode='w') as file:
         writer = csv.writer(file)
-        writer.writerow(['Metric', 'Value'])
+        writer.writerow(['Class', 'F1 Score'])
         for metric, value in metrics.items():
             writer.writerow([metric, value])
-
