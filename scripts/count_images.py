@@ -30,7 +30,7 @@ def count_images_per_class(dataset_root):
             for subclass_name in sorted(os.listdir(class_dir)):
                 subclass_dir = os.path.join(class_dir, subclass_name)
                 if os.path.isdir(subclass_dir):
-                    image_count = len([img for img in os.listdir(subclass_dir) if img.endswith(('jpg', 'jpeg', 'png'))])
+                    image_count = len([img for img in os.listdir(subclass_dir) if img.endswith(('jpg', 'jpeg', 'png','JPG'))])
                     subclass_counts[subclass_name] = image_count
                     total_class_images += image_count
 
