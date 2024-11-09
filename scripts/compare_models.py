@@ -43,8 +43,11 @@ def main():
         simclr_encoder = train_simclr(device)
         logging.info("SimCLR training complete. Proceeding to fine-tuning...")
         simclr_fine_tuned_model = fine_tune(simclr_encoder, device, num_classes)
-        simclr_f1 = evaluate(simclr_fine_tuned_model, device, num_classes)
-        logging.info(f"SimCLR F1 Score: {simclr_f1}")
+        simclr_f1_per_class, simclr_macro_f1, simclr_weighted_f1 = evaluate(simclr_fine_tuned_model, device, num_classes)
+        logging.info(f"SimCLR Macro F1 Score: {simclr_macro_f1}")
+        logging.info(f"SimCLR Weighted F1 Score: {simclr_weighted_f1}")
+        for class_name, f1_score in simclr_f1_per_class.items():
+            logging.info(f"SimCLR F1 Score for {class_name}: {f1_score}")
     except Exception as e:
         logging.error(f"Error during SimCLR training or evaluation: {e}")
 
@@ -54,8 +57,11 @@ def main():
         byol_encoder = train_byol(device)
         logging.info("BYOL training complete. Proceeding to fine-tuning...")
         byol_fine_tuned_model = fine_tune(byol_encoder, device, num_classes)
-        byol_f1 = evaluate(byol_fine_tuned_model, device, num_classes)
-        logging.info(f"BYOL F1 Score: {byol_f1}")
+        byol_f1_per_class, byol_macro_f1, byol_weighted_f1 = evaluate(byol_fine_tuned_model, device, num_classes)
+        logging.info(f"BYOL Macro F1 Score: {byol_macro_f1}")
+        logging.info(f"BYOL Weighted F1 Score: {byol_weighted_f1}")
+        for class_name, f1_score in byol_f1_per_class.items():
+            logging.info(f"BYOL F1 Score for {class_name}: {f1_score}")
     except Exception as e:
         logging.error(f"Error during BYOL training or evaluation: {e}")
 
@@ -65,8 +71,11 @@ def main():
         dino_encoder = train_dino(device)
         logging.info("DINO training complete. Proceeding to fine-tuning...")
         dino_fine_tuned_model = fine_tune(dino_encoder, device, num_classes)
-        dino_f1 = evaluate(dino_fine_tuned_model, device, num_classes)
-        logging.info(f"DINO F1 Score: {dino_f1}")
+        dino_f1_per_class, dino_macro_f1, dino_weighted_f1 = evaluate(dino_fine_tuned_model, device, num_classes)
+        logging.info(f"DINO Macro F1 Score: {dino_macro_f1}")
+        logging.info(f"DINO Weighted F1 Score: {dino_weighted_f1}")
+        for class_name, f1_score in dino_f1_per_class.items():
+            logging.info(f"DINO F1 Score for {class_name}: {f1_score}")
     except Exception as e:
         logging.error(f"Error during DINO training or evaluation: {e}")
 
@@ -75,20 +84,13 @@ def main():
         logging.info("Starting baseline training...")
         baseline_encoder = Encoder().to(device)
         baseline_fine_tuned_model = fine_tune(baseline_encoder, device, num_classes)
-        baseline_f1 = evaluate(baseline_fine_tuned_model, device, num_classes)
-        logging.info(f"Baseline F1 Score: {baseline_f1}")
+        baseline_f1_per_class, baseline_macro_f1, baseline_weighted_f1 = evaluate(baseline_fine_tuned_model, device, num_classes)
+        logging.info(f"Baseline Macro F1 Score: {baseline_macro_f1}")
+        logging.info(f"Baseline Weighted F1 Score: {baseline_weighted_f1}")
+        for class_name, f1_score in baseline_f1_per_class.items():
+            logging.info(f"Baseline F1 Score for {class_name}: {f1_score}")
     except Exception as e:
-        logging.error(f"Error during baseline training or evaluation: {e}")
-    
-    # 5. Print Results
-    try:
-        logging.info("\nComparison of F1 Scores:")
-        print(f"SimCLR: {simclr_f1}")
-        print(f"BYOL: {byol_f1}")
-        print(f"DINO: {dino_f1}")
-        print(f"Baseline: {baseline_f1}")
-    except NameError as e:
-        logging.error(f"Error printing results, variable may not be defined: {e}")
+        logging.error(f"Error during Baseline training or evaluation: {e}")
 
 if __name__ == "__main__":
     main()
