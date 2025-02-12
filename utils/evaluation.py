@@ -14,6 +14,11 @@ def evaluate(model, device, test_loader, num_classes, class_names, save_csv=True
         for images, labels in test_loader:
             images = images.to(device)
             outputs = model(images)
+            
+            # Ensure outputs is a tensor, not a tuple
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]
+
             _, predicted = torch.max(outputs, 1)
             all_labels.extend(labels.cpu().numpy())
             all_predictions.extend(predicted.cpu().numpy())
@@ -28,7 +33,7 @@ def evaluate(model, device, test_loader, num_classes, class_names, save_csv=True
 
     if save_csv:
         save_metrics_to_csv(f1_per_class, 'per_class_f1_scores.csv')
-    
+
     return f1_per_class, macro_f1, weighted_f1
 
 def save_metrics_to_csv(metrics, filepath):
