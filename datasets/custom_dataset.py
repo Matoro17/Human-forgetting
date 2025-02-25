@@ -23,6 +23,7 @@ class CustomDataset(Dataset):
         self.labels = []
         self.binary_classification = binary_classification
         self.positive_classes = positive_classes if positive_classes else []
+        original_labels = []  # To store original class indices for stratification
 
         # Gather all valid images and labels
         for idx, class_name in enumerate(self.classes):
@@ -41,6 +42,7 @@ class CustomDataset(Dataset):
                             with Image.open(img_path) as img:
                                 img.verify()
                             self.image_paths.append(img_path)
+                            original_labels.append(idx)  # Store original class index for stratification
                             # Assign binary or multi-class labels
                             if self.binary_classification:
                                 self.labels.append(1 if class_name in self.positive_classes else 0)
@@ -49,10 +51,10 @@ class CustomDataset(Dataset):
                         except (UnidentifiedImageError, IOError):
                             print(f"Skipping invalid or unreadable file: {img_path}")
 
-        # Stratified split based on labels
+        # Stratified split based on original class indices
         train_paths, test_paths, train_labels, test_labels = train_test_split(
             self.image_paths, self.labels, 
-            stratify=self.labels, 
+            stratify=original_labels,  # Use original class indices for stratification
             train_size=train_ratio, 
             random_state=random_state
         )
