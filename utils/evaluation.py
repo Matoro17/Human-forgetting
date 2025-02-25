@@ -36,9 +36,14 @@ def evaluate(model, device, test_loader, num_classes, class_names, save_csv=True
 
     return f1_per_class, macro_f1, weighted_f1
 
-def save_metrics_to_csv(metrics, filepath):
+def save_metrics_to_txt(results, filepath):
+    if not results:
+        print("No results to save.")
+        return
+
     with open(filepath, mode='w') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Class', 'F1 Score'])
-        for class_name, f1_score in metrics.items():
-            writer.writerow([class_name, f1_score])
+        for arch, metrics in results.items():
+            file.write(f"Architecture: {arch}\n")
+            for key, value in metrics.items():
+                file.write(f"  {key}: {value}\n")
+            file.write("\n")  # Separate architectures with a blank line
