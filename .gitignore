@@ -2,7 +2,11 @@
 /datasetMestradoGledson+gabriel
 /dataset-mestrado-Gabriel
 /data
+/glomeruli
 /checkpoints
 __pycache__
 *.pth
 
+*.txt
+*.csv
+*.rar
