@@ -1,239 +1,265 @@
 import torch
-import sys
-import os
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models, transforms
-from torch.utils.data import DataLoader, Subset
-from torch.optim import Adam
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.metrics import f1_score
+from torchvision.models import ResNet18_Weights, ResNet50_Weights, ResNet101_Weights
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, confusion_matrix
 import numpy as np
-
-# Add the project root directory to PYTHONPATH
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
-
-from utils.evaluation import evaluate, save_metrics_to_csv
-
+from torch.utils.data import DataLoader, Dataset, Subset
+from torch.optim import Adam
+from tqdm import tqdm
+from PIL import Image
 import os
-from dotenv import load_dotenv  # Import dotenv to load .env files
+import sys
+import time
+from codecarbon import OfflineEmissionsTracker
+from dotenv import load_dotenv
+from datetime import datetime
 
-# Load environment variables from .env file
+# Add project root to PYTHONPATH
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
+from datasets.custom_dataset import CustomDataset
+from utils.evaluation import save_metrics_to_txt, log_message
+
+# Define log file
+log_filename = f"SimCLR_training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+log_filepath = os.path.join(os.getcwd(), log_filename)
+
+# Load environment variables
 load_dotenv()
 
-USE_ALL_SUBCLASSES = os.getenv("USE_ALL_SUBCLASSES", "true").lower() == "true"
-SUBCLASSES = os.getenv("SUBCLASSES", "AZAN,HE,PAS").split(",") if not USE_ALL_SUBCLASSES else None
-NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 100))
+NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 50))
 EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10))
 EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
 
 class SimCLR(nn.Module):
-    def __init__(self, backbone, projection_dim=128):
+    def __init__(self, backbone_name='resnet18', use_pretrained=True, projection_dim=128):
         super(SimCLR, self).__init__()
-        self.backbone = backbone
+        self.backbone = self._create_backbone(backbone_name, use_pretrained)
         self.projection_head = nn.Sequential(
-            nn.Linear(backbone.fc.in_features, 512),
+            nn.Linear(self.backbone.fc.in_features, 512),
             nn.ReLU(),
             nn.Linear(512, projection_dim)
         )
         self.backbone.fc = nn.Identity()
+        self.classification_head = None
+
+    def _create_backbone(self, backbone_name, use_pretrained):
+        if backbone_name == 'resnet18':
+            backbone = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if use_pretrained else None)
+            self.feature_dim = 512  # Output feature dimension for resnet18
+        elif backbone_name == 'resnet50':
+            backbone = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1 if use_pretrained else None)
+            self.feature_dim = 2048  # Output feature dimension for resnet50
+        elif backbone_name == 'resnet101':
+            backbone = models.resnet101(weights=ResNet101_Weights.IMAGENET1K_V1 if use_pretrained else None)
+            self.feature_dim = 2048  # Output feature dimension for resnet101
+        else:
+            raise ValueError(f"Unsupported backbone: {backbone_name}")
+        return backbone
 
     def forward(self, x):
         h = self.backbone(x)
         z = self.projection_head(h)
         return F.normalize(h, dim=-1), F.normalize(z, dim=-1)
 
-def nt_xent_loss(z_i, z_j, temperature=0.5):
-    batch_size = z_i.shape[0]
-    representations = torch.cat([z_i, z_j], dim=0)
-    similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=-1)
-    mask = torch.eye(2 * batch_size, device=similarity_matrix.device).bool()
-    
-    positives = similarity_matrix.masked_select(mask).view(2 * batch_size, -1)
-    negatives = similarity_matrix.masked_select(~mask).view(2 * batch_size, -1)
-
-    labels = torch.zeros(2 * batch_size).long().to(z_i.device)
-    logits = torch.cat([positives, negatives], dim=1) / temperature
-    loss = F.cross_entropy(logits, labels)
-    return loss
-
-def train_ssl(model, dataloader, optimizer, epochs=10, device='cuda'):
-    model.to(device)
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-
-        for (x, _) in dataloader:
-            x = torch.cat([x, torch.flip(x, dims=[-1])], dim=0).to(device)
-            _, z_i = model(x[:len(x) // 2])
-            _, z_j = model(x[len(x) // 2:])
-
-            loss = nt_xent_loss(z_i, z_j)
-            total_loss += loss.item()
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        print(f"Epoch [{epoch + 1}/{epochs}], Loss: {total_loss / len(dataloader):.4f}")
-
-def fine_tune(model, dataloader, criterion, optimizer, epochs=10, device='cuda'):
-    model.to(device)
-    model.train()
-    for epoch in range(epochs):
-        total_loss = 0
-
-        for (x, y) in dataloader:
-            x, y = x.to(device), y.to(device)
-            outputs = model.backbone(x)
-            loss = criterion(outputs, y)
-            total_loss += loss.item()
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        print(f"Fine-tune Epoch [{epoch + 1}/{epochs}], Loss: {total_loss / len(dataloader):.4f}")
-
-def get_model(option, backbone_name='resnet50', projection_dim=128, pretrained=True, simclr_pretrained_path=None):
-    if option == 'pretrained_ssl':  
-        # Pretrained backbone with SimCLR for fine-tuning
-        backbone = models.__dict__[backbone_name](pretrained=pretrained)
-        model = SimCLR(backbone, projection_dim)
-
-    elif option == 'retrain_ssl':  
-        # Load a pretrained SimCLR model and continue SSL training
-        if simclr_pretrained_path is None:
-            raise ValueError("Provide a path to the pretrained SimCLR model for 'retrain_ssl'")
+    def nt_xent_loss(self, z_i, z_j, temperature=0.5):
+        batch_size = z_i.shape[0]
+        representations = torch.cat([z_i, z_j], dim=0)
+        similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=-1)
+        mask = torch.eye(2 * batch_size, device=similarity_matrix.device).bool()
         
-        checkpoint = torch.load(simclr_pretrained_path)
-        backbone = models.__dict__[backbone_name](pretrained=False)
-        model = SimCLR(backbone, projection_dim)
-        model.load_state_dict(checkpoint)
+        positives = similarity_matrix.masked_select(mask).view(2 * batch_size, -1)
+        negatives = similarity_matrix.masked_select(~mask).view(2 * batch_size, -1)
 
-    elif option == 'ssl_only':  
-        # Fresh SSL training without any pre-training
-        backbone = models.__dict__[backbone_name](pretrained=False)
-        model = SimCLR(backbone, projection_dim)
+        labels = torch.zeros(2 * batch_size).long().to(z_i.device)
+        logits = torch.cat([positives, negatives], dim=1) / temperature
+        loss = F.cross_entropy(logits, labels)
+        return loss
 
-    elif option == 'pretrained_finetune':
-        # Pretrained backbone without SimCLR, directly fine-tuned
-        backbone = models.__dict__[backbone_name](pretrained=pretrained)
-        model = backbone
+class SimCLRTrainer:
+    def __init__(self, model, device='cuda', lr=1e-3):
+        self.model = model.to(device)
+        self.device = device
+        self.optimizer = Adam(self.model.parameters(), lr=lr)
+        self.best_loss = float('inf')
+        self.early_stopping_counter = 0
+        self.train_time = 0.0
+        self.fine_tune_time = 0.0
 
-    else:
-        raise ValueError("Invalid option. Choose from 'pretrained_ssl', 'retrain_ssl', 'ssl_only', or 'pretrained_finetune'.")
-    
-    return model
+    def train(self, train_loader, epochs):
+        self.model.train()
+        start_time = time.time()
+        
+        for epoch in range(epochs):
+            epoch_start = time.time()
+            total_loss = 0
+            for x, _ in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
+                x = torch.cat([x, torch.flip(x, dims=[-1])], dim=0).to(self.device)
+                _, z_i = self.model(x[:len(x) // 2])
+                _, z_j = self.model(x[len(x) // 2:])
+                loss = self.model.nt_xent_loss(z_i, z_j)
+                
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                
+                total_loss += loss.item()
 
-from datasets.custom_dataset import CustomDataset
+            epoch_time = time.time() - epoch_start
+            self.train_time += epoch_time
+            
+            avg_loss = total_loss / len(train_loader)
+            log_message(log_filepath, f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
+            
+            # Early stopping
+            if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
+                self.best_loss = avg_loss
+                self.early_stopping_counter = 0
+            else:
+                self.early_stopping_counter += 1
+                if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
+                    log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
+                    break
 
-def main():
-    DATASET_DIR = os.getenv("DATASET_DIR", "datasets/train")
-    transform = transforms.Compose([
+    def fine_tune(self, train_loader, num_classes, epochs):
+        # Ensure the classification head matches the backbone's output dimension
+        self.model.classification_head = nn.Linear(self.model.feature_dim, num_classes).to(self.device)
+        self.optimizer = Adam([
+            {'params': self.model.backbone.parameters(), 'lr': 1e-4},
+            {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
+        ])
+        
+        criterion = nn.CrossEntropyLoss()
+        self.model.train()
+        start_time = time.time()
+        
+        for epoch in range(epochs):
+            total_loss = 0
+            for x, y in tqdm(train_loader, desc=f"Fine-tune Epoch {epoch+1}/{epochs}"):
+                x, y = x.to(self.device), y.to(self.device)
+                h, _ = self.model(x)
+                logits = self.model.classification_head(h)
+                loss = criterion(logits, y)
+                
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                
+                total_loss += loss.item()
+            
+            avg_loss = total_loss / len(train_loader)
+            log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
+        
+        self.fine_tune_time = time.time() - start_time
+
+    def evaluate(self, test_loader):
+        self.model.eval()
+        y_true, y_pred = [], []
+        with torch.no_grad():
+            for x, y in test_loader:
+                x, y = x.to(self.device), y.cpu()
+                h, _ = self.model(x)
+                logits = self.model.classification_head(h)
+                preds = torch.argmax(logits, dim=1).cpu()
+                y_true.extend(y.numpy())
+                y_pred.extend(preds.numpy())
+        
+        metrics = {
+            'f1': f1_score(y_true, y_pred, average='weighted'),
+            'accuracy': accuracy_score(y_true, y_pred),
+            'precision': precision_score(y_true, y_pred, average='weighted'),
+            'recall': recall_score(y_true, y_pred, average='weighted'),
+            'confusion_matrix': confusion_matrix(y_true, y_pred)
+        }
+        return metrics
+
+def get_transform():
+    return transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    dataset = CustomDataset(root_dir=DATASET_DIR, transform=transform)
-    class_names = dataset.classes
-    num_classes = len(class_names)
-    print("class_names: " + str(class_names))
-    print("num_classes: " + str(num_classes))
+def run_experiment(backbone_name, device):
+    log_message(log_filepath,f"\n{'='*40}\nExperiment with Backbone: {backbone_name}\n{'='*40}")
+    
+    # Start tracking energy consumption
+    tracker = OfflineEmissionsTracker(country_iso_code="USA", log_level="error")
+    tracker.start()
+    start_time = time.time()
 
-    # Dataset split for training and testing
-    train_dataset, test_dataset = train_test_split(dataset, test_size=0.2, random_state=42)
-
+    # Create dataset
+    transform = get_transform()
+    full_dataset = CustomDataset(
+        root_dir=os.getenv("DATASET_DIR", "datasets/train"),
+        transform=transform
+    )
+    labels = [y for _, y in full_dataset]
+    train_idx, test_idx = train_test_split(
+        range(len(full_dataset)),
+        test_size=0.2,
+        stratify=labels,
+        random_state=42
+    )
+    train_dataset = Subset(full_dataset, train_idx)
+    test_dataset = Subset(full_dataset, test_idx)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    num_classes = len(np.unique(labels))
 
-    # # Option 1: Pretrained + SSL + Fine-tune
-    # print("Starting Pretrained SimCLR + SSL + Fine-tune")
-    # model = get_model('pretrained_ssl')
-    # optimizer = Adam(model.parameters(), lr=1e-3)
-    # train_ssl(model, train_loader, optimizer, epochs=NUM_EPOCHS)
+    # Initialize model and trainer
+    model = SimCLR(backbone_name=backbone_name)
+    trainer = SimCLRTrainer(model, device=device)
     
-    # # Nested K-Fold Cross-Validation
-    # kfold = KFold(n_splits=5, shuffle=True, random_state=42)
-    # for fold, (train_idx, val_idx) in enumerate(kfold.split(train_dataset)):
-    #     print(f"Fold {fold + 1}")
-    #     train_subset = Subset(train_dataset, train_idx)
-    #     val_subset = Subset(train_dataset, val_idx)
-        
-    #     train_loader_fold = DataLoader(train_subset, batch_size=32, shuffle=True)
-    #     val_loader_fold = DataLoader(val_subset, batch_size=32, shuffle=False)
-        
-    #     fine_tune(model, train_loader_fold, nn.CrossEntropyLoss(), optimizer, epochs=NUM_EPOCHS)
-    #     evaluate_and_save(model, val_loader_fold, class_names, num_classes)
+    # Training phase
+    trainer.train(train_loader, NUM_EPOCHS)
+    trainer.fine_tune(train_loader, num_classes, NUM_EPOCHS)
     
-    # print("Evaluating Pretrained SimCLR + SSL + Fine-tune")
-    # evaluate_and_save(model, test_loader, class_names, num_classes)
-
-    # # Option 3: SSL from scratch + Fine-tune
-    # print("Starting SSL from Scratch + Fine-tune")
-    # model = get_model('ssl_only')
-    # optimizer = Adam(model.parameters(), lr=1e-3)
-    # train_ssl(model, train_loader, optimizer, epochs=NUM_EPOCHS)
+    # Evaluation
+    metrics = trainer.evaluate(test_loader)
     
-    # # Nested K-Fold Cross-Validation
-    # for fold, (train_idx, val_idx) in enumerate(kfold.split(train_dataset)):
-    #     print(f"Fold {fold + 1}")
-    #     train_subset = Subset(train_dataset, train_idx)
-    #     val_subset = Subset(train_dataset, val_idx)
-        
-    #     train_loader_fold = DataLoader(train_subset, batch_size=32, shuffle=True)
-    #     val_loader_fold = DataLoader(val_subset, batch_size=32, shuffle=False)
-        
-    #     fine_tune(model, train_loader_fold, nn.CrossEntropyLoss(), optimizer, epochs=NUM_EPOCHS)
-    #     evaluate_and_save(model, val_loader_fold, class_names, num_classes)
+    # Stop tracking and calculate metrics
+    try:
+        emissions = tracker.stop()
+    except Exception as e:
+        log_message(log_filepath,f"Error stopping tracker: {str(e)}")
+        emissions = None
     
-    # print("Evaluating SSL from Scratch + Fine-tune")
-    # evaluate_and_save(model, test_loader, class_names, num_classes)
-
-    # Binary Classifier Evaluation
-    print("Starting Binary Classifier Evaluation: 11_necrose_fibrinoide")
-    binary_dataset = CustomDataset(root_dir=DATASET_DIR, transform=transform, binary_classification=True, positive_classes=["11_necrose_fibrinoide"])
-
-    binary_train_dataset, binary_test_dataset = train_test_split(binary_dataset, test_size=0.2, random_state=42)
+    total_time = time.time() - start_time
     
-    binary_train_loader = DataLoader(binary_train_dataset, batch_size=32, shuffle=True)
-    binary_test_loader = DataLoader(binary_test_dataset, batch_size=32, shuffle=False)
+    # Handle missing emissions data
+    co2_emissions = emissions
     
-    model = get_model('pretrained_ssl')
-    optimizer = Adam(model.parameters(), lr=1e-3)
-    fine_tune(model, binary_train_loader, nn.CrossEntropyLoss(), optimizer, epochs=NUM_EPOCHS)
-    evaluate_and_save(model, binary_test_loader, ["11_necrose_fibrinoide", "Not_necrose"], 2)
-
-    # # Single Subclass Evaluation (e.g., AZAN)
-    # print("Starting Single Subclass Evaluation (AZAN)")
-    # azan_dataset = CustomDataset(root_dir=DATASET_DIR, transform=transform, subclasses=["AZAN"])
-    # azan_train_dataset, azan_test_dataset = train_test_split(azan_dataset, test_size=0.2, random_state=42)
+    metrics.update({
+        'training_time': total_time,
+        'co2_emissions': co2_emissions,
+        'detailed_training_time': trainer.train_time,
+        'fine_tune_time': trainer.fine_tune_time
+    })
     
-    # azan_train_loader = DataLoader(azan_train_dataset, batch_size=32, shuffle=True)
-    # azan_test_loader = DataLoader(azan_test_dataset, batch_size=32, shuffle=False)
+    log_message(log_filepath,f"\nMetrics for {backbone_name}:")
+    log_message(log_filepath,f"Training Time: {total_time:.2f}s (Pretrain: {trainer.train_time:.2f}s, Fine-tune: {trainer.fine_tune_time:.2f}s)")
+    log_message(log_filepath,f"Accuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}")
+    log_message(log_filepath,f"CO2 Emissions: {metrics['co2_emissions']:.4f}kg")
     
-    # model = get_model('pretrained_ssl')
-    # optimizer = Adam(model.parameters(), lr=1e-3)
-    # fine_tune(model, azan_train_loader, nn.CrossEntropyLoss(), optimizer, epochs=NUM_EPOCHS)
-    # evaluate_and_save(model, azan_test_loader, azan_dataset.classes, len(azan_dataset.classes))
+    return metrics
 
-def evaluate_and_save(model, test_loader, class_names, num_classes):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    print("Evaluating the model Evaluate and Save")
-    print("class_names: " + str(class_names))
-    print("num_classes: " + str(num_classes))
-    # Evaluate the model and extract F1 scores
-    f1_per_class, macro_f1, weighted_f1 = evaluate(model, device, test_loader, num_classes, class_names)
+def main():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    backbones = ['resnet18']
+    
+    results = {}
+    for backbone in backbones:
+        try:
+            results[backbone] = run_experiment(backbone, device)
+        except Exception as e:
+            log_message(log_filepath,f"Failed to run experiment for {backbone}: {str(e)}")
+    
+    # Save results
+    save_metrics_to_txt(results, "backbone_comparison.csv")
+    log_message(log_filepath,"\nComparison saved to backbone_comparison.csv")
 
-    print("\nF1 Scores per class:")
-    for class_name, score in f1_per_class.items():
-        print(f"{class_name}: {score:.4f}")
-    print(f"Macro F1: {macro_f1:.4f}, Weighted F1: {weighted_f1:.4f}")
-
-    # Save the F1 scores for each class
-    save_metrics_to_csv(f1_per_class, 'f1_scores_per_class.csv')
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
