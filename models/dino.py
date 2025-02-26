@@ -20,17 +20,12 @@ from datetime import datetime
 # Add project root to PYTHONPATH
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 from datasets.custom_dataset import CustomDataset
-from utils.evaluation import save_metrics_to_txt
+from utils.evaluation import save_metrics_to_txt, log_message
 
 # Define log file
-log_filename = f"training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+log_filename = f"DINO_training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
 log_filepath = os.path.join(os.getcwd(), log_filename)
 
-def log_message(message):
-    """Logs a message to both the console and a file."""
-    print(message)
-    with open(log_filepath, "a") as log_file:
-        log_file.write(message + "\n")
 
 # Load environment variables
 load_dotenv()
@@ -132,7 +127,7 @@ class DINOTrainer:
             self.train_time += epoch_time
             
             avg_loss = total_loss / len(train_loader)
-            log_message(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
+            log_message(log_filepath, f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
             
             # Early stopping
             if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
@@ -141,7 +136,7 @@ class DINOTrainer:
             else:
                 self.early_stopping_counter += 1
                 if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
-                    log_message(f"Early stopping at epoch {epoch+1}")
+                    log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
                     break
 
     def fine_tune(self, train_loader, num_classes, epochs):
@@ -170,7 +165,7 @@ class DINOTrainer:
                 total_loss += loss.item()
             
             avg_loss = total_loss / len(train_loader)
-            log_message(f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
+            log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
         
         self.fine_tune_time = time.time() - start_time
 
@@ -210,7 +205,7 @@ def get_transform(architecture):
         ])
 
 def run_experiment(architecture, device):
-    log_message(f"\n{'='*40}\nExperiment with Architecture: {architecture}\n{'='*40}")
+    log_message(log_filepath,f"\n{'='*40}\nExperiment with Architecture: {architecture}\n{'='*40}")
     
     # Start tracking energy consumption
     tracker = OfflineEmissionsTracker(country_iso_code="USA", log_level="error")
@@ -251,7 +246,7 @@ def run_experiment(architecture, device):
     try:
         emissions = tracker.stop()
     except Exception as e:
-        log_message(f"Error stopping tracker: {str(e)}")
+        log_message(log_filepath,f"Error stopping tracker: {str(e)}")
         emissions = None
     
     total_time = time.time() - start_time
@@ -270,28 +265,28 @@ def run_experiment(architecture, device):
     
     # print(metrics)
     
-    log_message(f"\nMetrics for {architecture}:")
-    log_message(f"Training Time: {total_time:.2f}s (Pretrain: {trainer.train_time:.2f}s, Fine-tune: {trainer.fine_tune_time:.2f}s)")
-    # log_message(f"Energy Consumed: {metrics['energy_consumed']:.4f}kWh")
-    log_message(f"CO2 Emissions: {metrics['co2_emissions']:.4f}kg")
-    log_message(f"Accuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}")
+    log_message(log_filepath,f"\nMetrics for {architecture}:")
+    log_message(log_filepath,f"Training Time: {total_time:.2f}s (Pretrain: {trainer.train_time:.2f}s, Fine-tune: {trainer.fine_tune_time:.2f}s)")
+    # log_message(log_filepath,f"Energy Consumed: {metrics['energy_consumed']:.4f}kWh")
+    log_message(log_filepath,f"Accuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}")
+    log_message(log_filepath,f"CO2 Emissions: {metrics['co2_emissions']:.4f}kg")
     
     return metrics
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    architectures = ['resnet18', 'resnet50', 'resnet101', 'vit_b_16']
+    architectures = ['resnet18']
     
     results = {}
     for arch in architectures:
         try:
             results[arch] = run_experiment(arch, device)
         except Exception as e:
-            log_message(f"Failed to run experiment for {arch}: {str(e)}")
+            log_message(log_filepath,f"Failed to run experiment for {arch}: {str(e)}")
     
     # Save results
     save_metrics_to_txt(results, "architecture_comparison.csv")
-    log_message("\nComparison saved to architecture_comparison.csv")
+    log_message(log_filepath,"\nComparison saved to architecture_comparison.csv")
 
 if __name__ == "__main__":
     main()
