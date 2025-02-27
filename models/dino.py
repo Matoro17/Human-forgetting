@@ -188,6 +188,7 @@ class DINOTrainer:
             'recall': recall_score(y_true, y_pred, average='weighted'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
+        log_message(log_filepath, f"Metrics: {metrics}")
         return metrics
 
 def get_transform(architecture):
@@ -288,5 +289,65 @@ def main():
     save_metrics_to_txt(results, "architecture_comparison.csv")
     log_message(log_filepath,"\nComparison saved to architecture_comparison.csv")
 
+def binary_main():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    architectures = ['resnet18']
+    
+    results = {}
+    
+    # Load the full dataset to get all classes
+    transform = get_transform(architectures[0])
+    full_dataset = CustomDataset(
+        root_dir=os.getenv("DATASET_DIR", "datasets/train"),
+        transform=transform
+    )
+    classes = full_dataset.classes
+    
+    for arch in architectures:
+        arch_results = {}
+        for class_name in classes:
+            log_message(log_filepath, f"\n{'='*40}\nExperiment with Architecture: {arch}, Class: {class_name}\n{'='*40}")
+            
+            # Create binary dataset with current class as positive
+            binary_dataset = CustomDataset(
+                root_dir=os.getenv("DATASET_DIR", "datasets/train"),
+                transform=transform,
+                binary_classification=True,
+                positive_classes=[class_name]
+            )
+            
+            # Split dataset into train and test
+            labels = [y for _, y in binary_dataset]
+            train_idx, test_idx = train_test_split(
+                range(len(binary_dataset)),
+                test_size=0.2,
+                stratify=labels,
+                random_state=42
+            )
+            train_dataset = Subset(binary_dataset, train_idx)
+            test_dataset = Subset(binary_dataset, test_idx)
+            train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+            test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+            
+            # Initialize model and trainer
+            model = DINO(architecture=arch)
+            trainer = DINOTrainer(model, device=device)
+            
+            # Training phase
+            trainer.train(train_loader, NUM_EPOCHS)
+            trainer.fine_tune(train_loader, 2, NUM_EPOCHS)  # Binary classification, so num_classes=2
+            
+            # Evaluation
+            metrics = trainer.evaluate(test_loader)
+            
+            # Track results
+            arch_results[class_name] = metrics
+        
+        results[arch] = arch_results
+    
+    # Save results
+    save_metrics_to_txt(results, "binary_classification_results.csv")
+    log_message(log_filepath, "\nBinary classification results saved to binary_classification_results.csv")
+
 if __name__ == "__main__":
-    main()
+    binary_main()
