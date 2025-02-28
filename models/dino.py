@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from torch.optim import Adam
 from tqdm import tqdm
 from PIL import Image
+from sklearn.metrics import precision_recall_fscore_support
 import os
 import sys
 import time
@@ -71,6 +72,13 @@ class DINO(nn.Module):
             nn.GELU(),
             nn.Linear(2048, out_dim)
         )
+        
+        # if self.classification_head is not None:
+        #     # Initialize bias to -log((1-p)/p) where p is positive class ratio
+        #     pos_ratio = len(np.where(np.array(self.labels) == 1)[0])/len(self.labels)
+        #     bias_init = -torch.log(torch.tensor((1-pos_ratio)/pos_ratio))
+        #     self.classification_head.bias.data = torch.tensor([-bias_init, bias_init])
+
         return nn.Sequential(backbone, projection_head)
 
     def _initialize_teacher(self):
@@ -146,7 +154,11 @@ class DINOTrainer:
             {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
         ])
         
-        criterion = nn.CrossEntropyLoss()
+        class_counts = torch.bincount(torch.tensor(train_loader.dataset.dataset.labels))
+        class_weights = 1. / class_counts.float()
+        class_weights = class_weights.to(self.device)
+                
+        criterion = nn.CrossEntropyLoss(weight=class_weights)        
         self.model.train()
         start_time = time.time()
         
@@ -180,8 +192,17 @@ class DINOTrainer:
                 preds = torch.argmax(logits, dim=1).cpu()
                 y_true.extend(y.numpy())
                 y_pred.extend(preds.numpy())
-        
+
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            y_true, y_pred, average=None, labels=[0,1]
+        )
         metrics = {
+            'f1_macro': f1_score(y_true, y_pred, average='macro'),
+            'f1_positive': f1[1],
+            'recall_positive': recall[1],
+            'precision_positive': precision[1],
+            'support_positive': np.sum(y_true),
+            # Keep original metrics for compatibility
             'f1': f1_score(y_true, y_pred, average='weighted'),
             'accuracy': accuracy_score(y_true, y_pred),
             'precision': precision_score(y_true, y_pred, average='weighted'),
