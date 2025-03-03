@@ -9,6 +9,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch.optim import Adam
 from tqdm import tqdm
+from sklearn.model_selection import KFold
 from PIL import Image
 from sklearn.metrics import precision_recall_fscore_support
 import os
@@ -313,6 +314,7 @@ def main():
 def binary_main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     architectures = ['resnet18']
+    K_FOLDS = 5  # Number of folds for cross-validation
     
     results = {}
     
@@ -337,38 +339,93 @@ def binary_main():
                 positive_classes=[class_name]
             )
             
-            # Split dataset into train and test
-            labels = [y for _, y in binary_dataset]
-            train_idx, test_idx = train_test_split(
-                range(len(binary_dataset)),
-                test_size=0.2,
-                stratify=labels,
-                random_state=42
-            )
-            train_dataset = Subset(binary_dataset, train_idx)
-            test_dataset = Subset(binary_dataset, test_idx)
-            train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-            test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+            # Initialize KFold
+            kf = KFold(n_splits=K_FOLDS, shuffle=True, random_state=42)
             
-            # Initialize model and trainer
-            model = DINO(architecture=arch)
-            trainer = DINOTrainer(model, device=device)
+            # Lists to collect metrics across folds
+            fold_metrics = {
+                'f1_macro': [],
+                'f1_positive': [],
+                'recall_positive': [],
+                'precision_positive': [],
+                'accuracy': [],
+                'co2_emissions': [],
+                'total_time': []
+            }
             
-            # Training phase
-            trainer.train(train_loader, NUM_EPOCHS)
-            trainer.fine_tune(train_loader, 2, NUM_EPOCHS)  # Binary classification, so num_classes=2
+            for fold_idx, (train_idx, test_idx) in enumerate(kf.split(binary_dataset), 1):
+                log_message(log_filepath, f"\nFold {fold_idx}/{K_FOLDS}")
+                
+                # Start tracking energy consumption for this fold
+                tracker = OfflineEmissionsTracker(country_iso_code="USA", log_level="error")
+                tracker.start()
+                start_time = time.time()
+                
+                # Create train and test subsets
+                train_subset = Subset(binary_dataset, train_idx)
+                test_subset = Subset(binary_dataset, test_idx)
+                
+                # Create dataloaders
+                train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
+                test_loader = DataLoader(test_subset, batch_size=32, shuffle=False)
+                
+                # Initialize model and trainer for this fold
+                model = DINO(architecture=arch)
+                trainer = DINOTrainer(model, device=device)
+                
+                # Training phase
+                trainer.train(train_loader, NUM_EPOCHS)
+                trainer.fine_tune(train_loader, num_classes=2, epochs=NUM_EPOCHS)  # Binary classification
+                
+                # Evaluation
+                metrics = trainer.evaluate(test_loader)
+                
+                # Stop tracking and collect emissions
+                emissions = tracker.stop()
+                fold_time = time.time() - start_time
+                
+                # Store fold metrics
+                fold_metrics['f1_macro'].append(metrics['f1_macro'])
+                fold_metrics['f1_positive'].append(metrics['f1_positive'])
+                fold_metrics['recall_positive'].append(metrics['recall_positive'])
+                fold_metrics['precision_positive'].append(metrics['precision_positive'])
+                fold_metrics['accuracy'].append(metrics['accuracy'])
+                fold_metrics['co2_emissions'].append(emissions)
+                fold_metrics['total_time'].append(fold_time)
+                
+                log_message(log_filepath, 
+                    f"Fold {fold_idx} Results:\n"
+                    f"F1 Macro: {metrics['f1_macro']:.4f}\n"
+                    f"F1 Positive: {metrics['f1_positive']:.4f}\n"
+                    f"Recall Positive: {metrics['recall_positive']:.4f}\n"
+                    f"Precision Positive: {metrics['precision_positive']:.4f}\n"
+                    f"Accuracy: {metrics['accuracy']:.4f}\n"
+                    f"Time: {fold_time:.2f}s\n"
+                    f"CO2: {emissions:.4f}kg"
+                )
             
-            # Evaluation
-            metrics = trainer.evaluate(test_loader)
+            # Calculate average metrics across folds
+            avg_metrics = {
+                'f1_macro': np.mean(fold_metrics['f1_macro']),
+                'f1_positive': np.mean(fold_metrics['f1_positive']),
+                'recall_positive': np.mean(fold_metrics['recall_positive']),
+                'precision_positive': np.mean(fold_metrics['precision_positive']),
+                'accuracy': np.mean(fold_metrics['accuracy']),
+                'co2_emissions_total': np.sum(fold_metrics['co2_emissions']),
+                'total_time': np.sum(fold_metrics['total_time']),
+                'co2_emissions_avg_per_fold': np.mean(fold_metrics['co2_emissions']),
+                'time_avg_per_fold': np.mean(fold_metrics['total_time'])
+            }
             
-            # Track results
-            arch_results[class_name] = metrics
+            arch_results[class_name] = avg_metrics
+            log_message(log_filepath, f"\nAverage Metrics for {class_name}:\n{avg_metrics}")
         
         results[arch] = arch_results
     
     # Save results
-    save_metrics_to_txt(results, "binary_classification_results.csv")
-    log_message(log_filepath, "\nBinary classification results saved to binary_classification_results.csv")
+    save_metrics_to_txt(results, "binary_classification_kfold_results.csv")
+    log_message(log_filepath, "\nK-fold binary classification results saved to binary_classification_kfold_results.csv")
+
 
 if __name__ == "__main__":
     binary_main()
