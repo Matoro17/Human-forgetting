@@ -179,6 +179,15 @@ class DINOTrainer:
             
             avg_loss = total_loss / len(train_loader)
             log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
+            # Early stopping
+            if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
+                self.best_loss = avg_loss
+                self.early_stopping_counter = 0
+            else:
+                self.early_stopping_counter += 1
+                if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
+                    log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
+                    break
         
         self.fine_tune_time = time.time() - start_time
 
@@ -314,7 +323,7 @@ def main():
 def binary_main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     architectures = ['resnet18']
-    K_FOLDS = 5  # Number of folds for cross-validation
+    K_FOLDS = 2  # Number of folds for cross-validation
     
     results = {}
     
@@ -322,7 +331,8 @@ def binary_main():
     transform = get_transform(architectures[0])
     full_dataset = CustomDataset(
         root_dir=os.getenv("DATASET_DIR", "datasets/train"),
-        transform=transform
+        transform=transform,
+        subclasses=['PAS']
     )
     classes = full_dataset.classes
     
