@@ -174,6 +174,10 @@ class ViTTrainer:
         self.model.train()
         start_time = time.time()
         
+        # Reset early stopping metrics for fine-tuning
+        self.best_loss = float('inf')  # <--- Reset to a large value
+        self.early_stopping_counter = 0  # <--- Reset patience counter
+        
         for epoch in range(epochs):
             total_loss = 0
             for x, y in tqdm(train_loader, desc=f"Fine-tune Epoch {epoch+1}/{epochs}"):
