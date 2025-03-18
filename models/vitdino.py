@@ -335,5 +335,86 @@ def main():
     save_metrics_to_txt(results, "vit_architecture_comparison.txt")
     log_message(log_filepath,"\nViT comparison saved to vit_architecture_comparison.txt")
 
+def binary_main():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    architectures = ['vit_b_16', 'swin_t', 'swin_s', 'swin_b']  # ViT architectures
+    
+    results = {}
+    
+    # Load the full dataset to get all classes
+    transform = get_transform(architectures[0])  # Transform will be properly selected per architecture
+    full_dataset = CustomDataset(
+        root_dir=os.getenv("DATASET_DIR", "datasets/train"),
+        transform=transform
+    )
+    classes = full_dataset.classes
+    
+    for arch in architectures:
+        arch_results = {}
+        for class_name in classes:
+            log_message(log_filepath, f"\n{'='*40}\nExperiment with Architecture: {arch}, Class: {class_name}\n{'='*40}")
+            
+            # Create binary dataset with current class as positive
+            binary_dataset = CustomDataset(
+                root_dir=os.getenv("DATASET_DIR", "datasets/train"),
+                transform=get_transform(arch),  # Ensure correct transform for current architecture
+                binary_classification=True,
+                positive_classes=[class_name]
+            )
+            
+            # Get binary labels for stratification
+            binary_labels = [y for _, y in binary_dataset]
+            
+            # Single train-test split
+            train_idx, test_idx = train_test_split(
+                range(len(binary_dataset)),
+                test_size=0.2,
+                stratify=binary_labels,
+                random_state=42
+            )
+            
+            # Create subsets and dataloaders
+            train_subset = Subset(binary_dataset, train_idx)
+            test_subset = Subset(binary_dataset, test_idx)
+            train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
+            test_loader = DataLoader(test_subset, batch_size=32, shuffle=False)
+            
+            # Start tracking energy consumption
+            tracker = OfflineEmissionsTracker(country_iso_code="USA", log_level="error")
+            tracker.start()
+            start_time = time.time()
+            
+            # Initialize model and trainer
+            model = ViTDINO(architecture=arch)
+            trainer = ViTTrainer(model, device=device)
+            
+            # Training phase
+            trainer.train(train_loader, NUM_EPOCHS)
+            trainer.fine_tune(train_loader, num_classes=2, epochs=NUM_EPOCHS)  # Binary classification
+            
+            # Evaluation
+            metrics = trainer.evaluate(test_loader)
+            
+            # Stop tracking and calculate metrics
+            emissions = tracker.stop()
+            total_time = time.time() - start_time
+            
+            # Add additional metrics
+            metrics.update({
+                'training_time': total_time,
+                'co2_emissions': emissions,
+                'detailed_training_time': trainer.train_time,
+                'fine_tune_time': trainer.fine_tune_time
+            })
+            
+            arch_results[class_name] = metrics
+            log_message(log_filepath, f"\nMetrics for {class_name}:\n{metrics}")
+        
+        results[arch] = arch_results
+    
+    # Save results
+    save_metrics_to_txt(results, "binary_classification_vit_results.txt")
+    log_message(log_filepath, "\nBinary classification results with ViT saved to binary_classification_vit_results.txt")
+
 if __name__ == "__main__":
-    main()
+    binary_main()
