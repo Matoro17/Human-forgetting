@@ -8,13 +8,11 @@ from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 from codecarbon import OfflineEmissionsTracker
 from dotenv import load_dotenv
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import matplotlib.pyplot as plt
 
-# Add project root to PYTHONPATH
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
-# Import components from existing files
 from dino import DINO, DINOTrainer, get_transform as dino_transform, log_message, save_metrics_to_txt
 from vitdino import ViTDINO, ViTTrainer, get_transform as vit_transform
 from datasets.symlinked_dataset import SymlinkedDataset
@@ -43,133 +41,158 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 log_filename = f"DINO_ViT_OVA_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
 log_filepath = os.path.join(RESULTS_DIR, log_filename)
 
-class EnhancedOVAExperimentRunner:
+class EnhancedTrainer:
     def __init__(self, architecture: str = 'dino_resnet18'):
         self.architecture = architecture
+        self.input_size = (224, 224)
         self.results = {}
-        self.input_size = (224, 224) if 'vit' not in architecture else (224, 224)
+        self.normalization_metrics = {}
 
-    def _get_transform(self, mean, std):
-        """Get normalized transforms using calculated statistics"""
-        base_transforms = [
-            transforms.Resize(self.input_size),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
-        ]
-        return transforms.Compose(base_transforms)
+    def _get_normalization_stats(self, data_path: str) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Calculate and store normalization metrics"""
+        mean, std = mean_std_for_symlinks(data_path, self.input_size)
+        self.normalization_metrics[data_path] = {
+            'mean': mean.tolist(),
+            'std': std.tolist()
+        }
+        return mean, std
 
-    def _initialize_model(self):
-        if self.architecture.startswith('vit'):
-            return ViTDINO(architecture=self.architecture)
-        return DINO(architecture=self.architecture.replace('dino_', ''))
-
-    def _create_datasets(self, class_name: str, fold: int) -> tuple:
+    def _create_datasets(self, class_name: str, fold: int) -> Tuple[Dataset, Dataset]:
         fold_dir = os.path.join(BASE_DATA_DIR, class_name, f"fold{fold}")
         train_dir = os.path.join(fold_dir, 'train')
         val_dir = os.path.join(fold_dir, 'val')
 
-        # Calculate normalization parameters
-        train_mean, train_std = mean_std_for_symlinks(train_dir, self.input_size)
+        # Calculate and store normalization metrics
+        train_mean, train_std = self._get_normalization_stats(train_dir)
+        
+        transform = transforms.Compose([
+            transforms.Resize(self.input_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=train_mean, std=train_std)
+        ])
         
         return (
-            SymlinkedDataset(train_dir, transform=self._get_transform(train_mean, train_std)),
-            SymlinkedDataset(val_dir, transform=self._get_transform(train_mean, train_std))
+            SymlinkedDataset(train_dir, transform=transform),
+            SymlinkedDataset(val_dir, transform=transform)
         )
 
-    def _run_single_fold(self, class_name: str, fold: int) -> Dict:
+    def _run_fold(self, class_name: str, fold: int) -> Dict:
         log_message(log_filepath, f"\nStarting fold {fold+1} for {class_name}")
         
-        model = self._initialize_model()
-        trainer_class = ViTTrainer if self.architecture.startswith('vit') else DINOTrainer
-        trainer = trainer_class(model, device=device)
+        # Initialize fresh model and trainer
+        if self.architecture.startswith('vit'):
+            model = ViTDINO(architecture=self.architecture)
+            trainer = ViTTrainer(model, device=device)
+        else:
+            model = DINO(architecture=self.architecture.replace('dino_', ''))
+            trainer = DINOTrainer(model, device=device)
 
+        # Create datasets and loaders
         train_dataset, val_dataset = self._create_datasets(class_name, fold)
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-        # Training with metrics collection
+        # Initialize tracking
         tracker = OfflineEmissionsTracker(country_iso_code="USA", log_level="error")
         tracker.start()
         start_time = time.time()
 
-        # Modified train method to return training metrics
-        train_results = trainer.train(train_loader, NUM_EPOCHS)
+        # Train with metric collection
+        train_metrics = {
+            'pretrain_loss': [],
+            'finetune_loss': [],
+            'train_acc': []
+        }
+
+        # Pretraining phase
+        trainer.train(train_loader, NUM_EPOCHS)
+        train_metrics['pretrain_loss'] = trainer.loss_history
+        
+        # Fine-tuning phase
         trainer.fine_tune(train_loader, num_classes=2, epochs=NUM_EPOCHS)
+        train_metrics['finetune_loss'] = trainer.loss_history
+        train_metrics['train_acc'] = trainer.acc_history
 
         # Evaluation
-        metrics = trainer.evaluate(val_loader)
+        val_metrics = trainer.evaluate(val_loader)
         emissions = tracker.stop()
         total_time = time.time() - start_time
 
-        # Visualization
-        self._save_visualizations(train_results, metrics, class_name, fold)
+        # Save visualizations
+        self._save_fold_visualizations(
+            train_metrics, 
+            val_metrics, 
+            class_name, 
+            fold
+        )
 
-        metrics.update({
+        # Combine metrics
+        return {
+            **val_metrics,
             'training_time': total_time,
             'co2_emissions': emissions,
-            'class': class_name,
-            'fold': fold+1
-        })
-        
-        return metrics
+            'normalization_stats': self.normalization_metrics,
+            'pretrain_loss_history': train_metrics['pretrain_loss'],
+            'finetune_loss_history': train_metrics['finetune_loss'],
+            'train_acc_history': train_metrics['train_acc']
+        }
 
-    def _save_visualizations(self, train_results, val_metrics, class_name, fold):
-        """Save training curves and confusion matrices"""
+    def _save_fold_visualizations(self, train_metrics, val_metrics, class_name, fold):
         save_dir = os.path.join(RESULTS_DIR, self.architecture, class_name, f"fold{fold}")
         os.makedirs(save_dir, exist_ok=True)
 
-        # Plot training curves
+        # Loss curves
         plot_loss({
-            'train_loss': train_results['train_losses'],
-            'test_loss': val_metrics['loss_history']
-        }, save_dir + '/')
-        
+            'pretrain_loss': train_metrics['pretrain_loss'],
+            'finetune_loss': train_metrics['finetune_loss'],
+            'val_loss': val_metrics.get('loss_history', [])
+        }, save_dir)
+
+        # Accuracy curves
         plot_acc({
-            'train_acc': train_results['train_accuracies'],
-            'test_acc': val_metrics['acc_history']
-        }, save_dir + '/')
+            'train_acc': train_metrics['train_acc'],
+            'val_acc': val_metrics.get('acc_history', [])
+        }, save_dir)
 
-        # Plot confusion matrix
-        plot_confusion_matrix(val_metrics['confusion_matrix'], save_dir + '/')
+        # Confusion matrix
+        plot_confusion_matrix(val_metrics['confusion_matrix'], save_dir)
 
-    def run_class_experiment(self, class_name: str) -> Dict:
-        class_metrics = []
-        log_message(log_filepath, f"\n{'='*40}\nStarting experiments for class: {class_name}\n{'='*40}")
+        # Save normalization stats
+        with open(os.path.join(save_dir, 'normalization.txt'), 'w') as f:
+            f.write(f"Mean: {self.normalization_metrics['mean']}\n")
+            f.write(f"Std: {self.normalization_metrics['std']}")
 
-        for fold in range(K_FOLDS):
-            fold_metrics = self._run_single_fold(class_name, fold)
-            class_metrics.append(fold_metrics)
-            log_message(log_filepath, f"Fold {fold+1} metrics: {fold_metrics}")
-
-        avg_metrics = {
-            'f1_macro': np.mean([m['f1_macro'] for m in class_metrics]),
-            'f1_positive': np.mean([m['f1_positive'] for m in class_metrics]),
-            'accuracy': np.mean([m['accuracy'] for m in class_metrics]),
-            'co2_total': np.sum([m['co2_emissions'] for m in class_metrics]),
-            'time_total': np.sum([m['training_time'] for m in class_metrics]),
-            'confusion_matrices': [m['confusion_matrix'] for m in class_metrics]
-        }
-        
-        return avg_metrics
-
-    def run_full_experiment(self):
+    def run_experiment(self):
         for class_name in CLASSES:
-            class_results = self.run_class_experiment(class_name)
-            self.results[class_name] = class_results
+            class_metrics = []
+            log_message(log_filepath, f"\n{'='*40}\nClass: {class_name}\n{'='*40}")
+            
+            for fold in range(K_FOLDS):
+                fold_metrics = self._run_fold(class_name, fold)
+                class_metrics.append(fold_metrics)
+                log_message(log_filepath, f"Fold {fold+1} complete. Metrics: {fold_metrics}")
+
+            # Aggregate class metrics
+            self.results[class_name] = {
+                'avg_f1': np.mean([m['f1_macro'] for m in class_metrics]),
+                'std_dev': np.std([m['f1_macro'] for m in class_metrics]),
+                'total_co2': sum([m['co2_emissions'] for m in class_metrics]),
+                'normalization_stats': class_metrics[0]['normalization_stats']
+            }
 
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    architectures = ['dino_resnet18', 'vit_b_16']
-    final_results = {}
+    experiments = {
+        'dino_resnet50': EnhancedTrainer('dino_resnet50'),
+        'vit_b_16': EnhancedTrainer('vit_b_16')
+    }
 
-    for arch in architectures:
-        log_message(log_filepath, f"\n{'#'*40}\nStarting {arch} experiments\n{'#'*40}")
-        runner = EnhancedOVAExperimentRunner(architecture=arch)
-        runner.run_full_experiment()
-        final_results[arch] = runner.results
+    for name, experiment in experiments.items():
+        log_message(log_filepath, f"\n{'#'*40}\nStarting {name} experiment\n{'#'*40}")
+        experiment.run_experiment()
+        save_metrics_to_txt(experiment.results, os.path.join(RESULTS_DIR, f"{name}_results.txt"))
 
-    save_metrics_to_txt(final_results, os.path.join(RESULTS_DIR, "enhanced_ova_results.txt"))
-    log_message(log_filepath, "\nAll experiments completed with visualizations.")
+    log_message(log_filepath, "\nAll experiments completed with full metrics collection")
 
 if __name__ == "__main__":
     main()
