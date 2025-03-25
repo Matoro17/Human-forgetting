@@ -114,6 +114,7 @@ class DINOTrainer:
         self.fine_tune_time = 0.0
 
     def train(self, train_loader, epochs):
+        self.loss_history = []
         self.model.train()
         start_time = time.time()
         
@@ -136,6 +137,7 @@ class DINOTrainer:
             self.train_time += epoch_time
             
             avg_loss = total_loss / len(train_loader)
+            self.loss_history.append(avg_loss)
             log_message(log_filepath, f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
             
             # Early stopping
@@ -147,8 +149,10 @@ class DINOTrainer:
                 if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
                     log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
                     break
+            return self.loss_history
 
     def fine_tune(self, train_loader, num_classes, epochs):
+        self.acc_history = []
         self.model.classification_head = nn.Linear(256, num_classes).to(self.device)
         self.optimizer = Adam([
             {'params': self.model.student.parameters(), 'lr': 1e-4},
@@ -178,6 +182,7 @@ class DINOTrainer:
                 total_loss += loss.item()
             
             avg_loss = total_loss / len(train_loader)
+            self.acc_history.append(avg_loss)
             log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
             # Early stopping
             if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
@@ -190,6 +195,7 @@ class DINOTrainer:
                     break
         
         self.fine_tune_time = time.time() - start_time
+        return self.acc_history
 
     def evaluate(self, test_loader):
         self.model.eval()
