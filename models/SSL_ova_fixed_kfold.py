@@ -4,6 +4,7 @@ import sys
 import time
 import numpy as np
 from torch.utils.data import DataLoader
+from torchvision import transforms
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 from codecarbon import OfflineEmissionsTracker
 from dotenv import load_dotenv
