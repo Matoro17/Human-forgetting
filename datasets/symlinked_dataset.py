@@ -6,15 +6,23 @@ import os
 
 
 class SymlinkedDataset(Dataset):
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, transform=None, class_order=None):
         self.root_dir = data_dir
         self.transform = transform
 
         # Get all class folders
-        self.classes = sorted(entry.name for entry in os.scandir(data_dir) if entry.is_dir())
-        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+        detected_classes = [entry.name for entry in os.scandir(data_dir) if entry.is_dir()]
+        
+        # Enforce explicit class order
+        if class_order:
+            # Validate folder structure matches expected classes
+            assert set(class_order) == set(detected_classes), \
+                   f"Class mismatch. Expected {class_order}, found {detected_classes}"
+            self.classes = class_order
+        else:
+            self.classes = sorted(detected_classes)
 
-        # Collect all file paths and labels
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
         self.samples = self._make_dataset()
 
     def _make_dataset(self):
