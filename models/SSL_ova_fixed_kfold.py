@@ -117,7 +117,7 @@ class UnifiedExperimentRunner:
         # Dynamically determine class order based on main class name
         class_prefix = class_name.split('_')[1]
         CLASS_ORDER = [
-            '0_negative', 
+            '0_Negative', 
             f'1_{class_prefix}'  # Matches your folder structure
         ]
 
