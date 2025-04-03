@@ -115,11 +115,11 @@ class UnifiedExperimentRunner:
         transform = self._get_transform(train_mean, train_std)
         
         # Dynamically determine class order based on main class name
-        class_prefix = class_name.split('_')[1]
+        positive_classes = [f'1_{class_name.split("_", 1)[1]}'] 
 
         # Create datasets with explicit class order
-        train_dataset = SymlinkedDataset(train_dir, transform=transform, binary_classification=True, positive_classes=[f'1_{class_prefix}'])
-        val_dataset = SymlinkedDataset(val_dir, transform=transform, binary_classification=True, positive_classes=[f'1_{class_prefix}'])
+        train_dataset = SymlinkedDataset(train_dir, transform=transform, binary_classification=True, positive_classes=positive_classes)
+        val_dataset = SymlinkedDataset(val_dir, transform=transform, binary_classification=True, positive_classes=positive_classes)
 
         # Create loaders
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -161,7 +161,9 @@ class UnifiedExperimentRunner:
             # f.write(f"CO2 Emissions: {emissions:.4f}kg\n")
 
         # Save confusion matrix
-        plot_confusion_matrix(metrics['confusion_matrix'], save_dir)
+        plot_confusion_matrix(metrics['confusion_matrix'], 
+                     positive_class_name=class_name,  # This should be your positive class name
+                     save_dir=save_dir)
 
     def run_class_experiment(self, class_name: str):
         class_metrics = []

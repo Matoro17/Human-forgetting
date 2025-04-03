@@ -173,10 +173,10 @@ class SimCLRTrainer:
                 y_pred.extend(preds.numpy())
         
         metrics = {
-            'f1': f1_score(y_true, y_pred, average='weighted'),
+            'f1': f1_score(y_true, y_pred, average='binary'),  # Focus on positive class (label=1)
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='weighted'),
-            'recall': recall_score(y_true, y_pred, average='weighted'),
+            'precision': precision_score(y_true, y_pred, average='binary'),
+            'recall': recall_score(y_true, y_pred, average='binary'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
         return metrics

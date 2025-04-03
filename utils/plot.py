@@ -26,15 +26,32 @@ def plot_acc(results, save_file_path):
     plt.savefig(str(save_file_path + 'accuracy.png'))
     plt.clf()
 
-def plot_confusion_matrix(cm, save_path):
+def plot_confusion_matrix(cm, positive_class_name: str, save_path: str):
+    """
+    Args:
+        cm: Confusion matrix array (2x2)
+        positive_class_name: Name of the positive class (e.g. "1_Amiloidose")
+        save_path: Full path to save the plot (including filename)
+    """
+    class_names = ["Negative", positive_class_name]
     
-    
-    plt.figure(figsize = (10,7))
+    plt.figure(figsize=(10, 7))
     plt.title('Matriz de Confusão')
     plt.ylabel('Classes Verdadeiras')
     plt.xlabel('Classes Preditas')
-    sns.heatmap(cm,cmap="OrRd", annot=True, annot_kws={"size":30}, fmt='g')
-    name=save_path + 'confusion_matrix.png'
-    print(f"Saving Confusion Matrix in: {name}")
-    plt.savefig(name) 
+    
+    ax = sns.heatmap(cm, cmap="OrRd", 
+                    annot=True, annot_kws={"size": 30}, 
+                    fmt='g',
+                    xticklabels=class_names,
+                    yticklabels=class_names)
+    
+    # Rotate class names for better readability
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+    
+    plt.tight_layout()  # Prevent label cutoff
+    print(f"Salvando Matriz de Confusão em: {save_path}")
+    plt.savefig(save_path)
     plt.clf()
+    plt.close()
