@@ -163,7 +163,7 @@ class UnifiedExperimentRunner:
         # Save confusion matrix
         plot_confusion_matrix(metrics['confusion_matrix'], 
                      positive_class_name=class_name,  # This should be your positive class name
-                     save_dir=save_dir)
+                     save_path=save_dir)
 
     def run_class_experiment(self, class_name: str):
         class_metrics = []
