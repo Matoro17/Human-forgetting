@@ -177,7 +177,7 @@ class UnifiedExperimentRunner:
         self.results[class_name] = {
             'avg_accuracy': np.mean([m['accuracy'] for m in class_metrics]),
             'avg_f1': np.mean([m['f1'] for m in class_metrics]),
-            'total_co2': np.sum([m['co2_emissions'] for m in class_metrics])
+            # 'total_co2': np.sum([m['co2_emissions'] for m in class_metrics])
         }
 
     def run_full_experiment(self):
