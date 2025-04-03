@@ -158,7 +158,7 @@ class UnifiedExperimentRunner:
             f.write(f"Accuracy: {metrics['accuracy']:.4f}\n")
             f.write(f"F1 Score: {metrics['f1']:.4f}\n")
             f.write(f"Training Time: {time:.2f}s\n")
-            f.write(f"CO2 Emissions: {emissions:.4f}kg\n")
+            # f.write(f"CO2 Emissions: {emissions:.4f}kg\n")
 
         # Save confusion matrix
         plot_confusion_matrix(metrics['confusion_matrix'], save_dir)
