@@ -6,21 +6,39 @@ import os
 
 
 class SymlinkedDataset(Dataset):
-    def __init__(self, data_dir, transform=None, class_order=None):
+    def __init__(self, data_dir, transform=None, class_order=None, 
+                 binary_classification=False, positive_classes=None):
+        """
+        Args:
+            data_dir (str): Root directory containing class folders
+            transform (callable, optional): Transform to apply to images
+            class_order (list, optional): Enforce specific class order
+            binary_classification (bool): Whether to use binary labels
+            positive_classes (list): Classes to treat as positive (for binary mode)
+        """
         self.root_dir = data_dir
         self.transform = transform
+        self.binary_classification = binary_classification
+        self.positive_classes = positive_classes or []
 
         # Get all class folders
         detected_classes = [entry.name for entry in os.scandir(data_dir) if entry.is_dir()]
         
-        # Enforce explicit class order
+        # Validate and set class order
         if class_order:
-            # Validate folder structure matches expected classes
             assert set(class_order) == set(detected_classes), \
                    f"Class mismatch. Expected {class_order}, found {detected_classes}"
             self.classes = class_order
         else:
             self.classes = sorted(detected_classes)
+
+        # Validate binary classification settings
+        if self.binary_classification:
+            if not self.positive_classes:
+                raise ValueError("positive_classes must be specified for binary classification")
+            invalid = [pc for pc in self.positive_classes if pc not in self.classes]
+            if invalid:
+                raise ValueError(f"positive_classes {invalid} not found in dataset classes")
 
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
         self.samples = self._make_dataset()
@@ -32,7 +50,14 @@ class SymlinkedDataset(Dataset):
             for entry in os.scandir(cls_dir):
                 if entry.is_file():
                     real_path = os.path.realpath(entry.path)  # Resolve symlinks
-                    samples.append((real_path, self.class_to_idx[cls_name]))
+                    
+                    # Determine label
+                    if self.binary_classification:
+                        label = 1 if cls_name in self.positive_classes else 0
+                    else:
+                        label = self.class_to_idx[cls_name]
+                    
+                    samples.append((real_path, label))
         return samples
 
     def __len__(self):
@@ -49,46 +74,3 @@ class SymlinkedDataset(Dataset):
             image = self.transform(image)
 
         return image, label
-# class SymlinkedDataset(Dataset):
-#     def __init__(self, data_dir, transform=None):
-#         self.root_dir = data_dir
-#         self.transform = transform
-
-#         # List all files, resolving symlinks to get the real paths
-#         self.file_paths = [os.path.realpath(os.path.join(data_dir, f)) for f in os.listdir(data_dir)]
-
-#     def __len__(self):
-#         return len(self.file_paths)
-
-#     def __getitem__(self, idx):
-#         img_path = self.file_paths[idx]
-
-#         # Load the image
-#         image = Image.open(img_path).convert("RGB")
-        
-#         # Apply any transformations
-#         if self.transform:
-#             image = self.transform(image)
-        
-#         return image, img_path
-
-
-# class SymlinkedDataset(Dataset):
-#     def __init__(self, data_dir, transform=None):
-#         self.data_dir = Path(data_dir)
-#         self.files = list(self.data_dir)  # or whatever extension
-#         self.files = [f.resolve() for f in self.files]  # Resolve symlinks
-#         self.transform = transform #or transforms.ToTensor()
-        
-#     def __len__(self):
-#         return len(self.files)
-        
-#     def __getitem__(self, idx):
-#         # Load the actual image
-#         img_path = self.files[idx]
-#         image = Image.open(img_path).convert('RGB')
-        
-#         if self.transform:
-#             image = self.transform(image)
-            
-#         return image

@@ -116,14 +116,10 @@ class UnifiedExperimentRunner:
         
         # Dynamically determine class order based on main class name
         class_prefix = class_name.split('_')[1]
-        CLASS_ORDER = [
-            '0_Negative', 
-            f'1_{class_prefix}'  # Matches your folder structure
-        ]
 
         # Create datasets with explicit class order
-        train_dataset = SymlinkedDataset(train_dir, transform=transform, class_order=CLASS_ORDER)
-        val_dataset = SymlinkedDataset(val_dir, transform=transform, class_order=CLASS_ORDER)
+        train_dataset = SymlinkedDataset(train_dir, transform=transform, binary_classification=True, positive_classes=[f'1_{class_prefix}'])
+        val_dataset = SymlinkedDataset(val_dir, transform=transform, binary_classification=True, positive_classes=[f'1_{class_prefix}'])
 
         # Create loaders
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
