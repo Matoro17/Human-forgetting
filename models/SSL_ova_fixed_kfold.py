@@ -33,7 +33,7 @@ CLASSES = [
     '3_Hipercelularidade'
 ]
 ARCHITECTURES = [
-    'simclr_resnet18',
+    # 'simclr_resnet18',
     'dino_resnet18'
 ]
 
