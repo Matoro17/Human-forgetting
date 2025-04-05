@@ -149,7 +149,8 @@ class DINOTrainer:
                 if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
                     log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
                     break
-            return self.loss_history
+        
+        return self.loss_history
 
     def fine_tune(self, train_loader, num_classes, epochs):
         self.acc_history = []
