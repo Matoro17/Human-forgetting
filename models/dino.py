@@ -159,7 +159,7 @@ class DINOTrainer:
             {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
         ])
         
-        class_counts = torch.bincount(torch.tensor(train_loader.dataset.dataset.labels))
+        class_counts = torch.bincount(torch.tensor(train_loader.dataset.labels))
         class_weights = 1. / class_counts.float()
         class_weights = class_weights.to(self.device)
                 
