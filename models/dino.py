@@ -115,6 +115,7 @@ class DINOTrainer:
 
     def train(self, train_loader, epochs):
         self.best_loss = float('inf')
+        self.early_stopping_counter = 0
         self.loss_history = []
         self.model.train()
         start_time = time.time()
@@ -155,6 +156,7 @@ class DINOTrainer:
 
     def fine_tune(self, train_loader, num_classes, epochs):
         self.best_loss = float('inf')
+        self.early_stopping_counter = 0
         self.acc_history = []
         self.model.classification_head = nn.Linear(256, num_classes).to(self.device)
         self.optimizer = Adam([
