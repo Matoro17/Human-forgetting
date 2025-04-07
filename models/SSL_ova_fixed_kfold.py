@@ -40,7 +40,7 @@ ARCHITECTURES = [
 # Environment setup
 load_dotenv()
 # This dataset doesn't have class balance
-BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
+BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/baseline/")
 RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
