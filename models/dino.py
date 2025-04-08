@@ -225,7 +225,7 @@ class DINOTrainer:
             'precision_positive': precision[1],
             'support_positive': np.sum(y_true),
             # Keep original metrics for compatibility
-            'f1': f1_score(y_true, y_pred, average='weighted'),
+            'f1': f1_score(y_true, y_pred, average='binary'),
             'accuracy': accuracy_score(y_true, y_pred),
             'precision': precision_score(y_true, y_pred, average='binary'),
             'recall': recall_score(y_true, y_pred, average='binary'),
