@@ -23,14 +23,15 @@ from utils.normalization import mean_std_for_symlinks
 from utils.plot import plot_loss, plot_acc, plot_confusion_matrix
 
 # Configuration
-K_FOLDS = 3
+K_FOLDS = 5
 BATCH_SIZE = 32
 NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 50))
 EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10))
 EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
 CLASSES = [
-    '0_Amiloidose', '1_Normal',
-    '3_Hipercelularidade'
+    '0_Amiloidose', '1_Normal', '2_Esclerose_Pura_Sem_Crescente',
+    '3_Hipercelularidade', '4_Hipercelularidade_Pura_Sem_Crescente',
+    '5_Crescent', '6_Membranous', '7_Sclerosis', '8_Podocytopathy'
 ]
 ARCHITECTURES = [
     # 'simclr_resnet18',
@@ -40,7 +41,7 @@ ARCHITECTURES = [
 # Environment setup
 load_dotenv()
 # This dataset doesn't have class balance
-BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/baseline/")
+BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
 RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
