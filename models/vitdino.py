@@ -235,10 +235,10 @@ class ViTTrainer:
             'precision_positive': precision[1],
             'support_positive': np.sum(y_true),
             # Keep original metrics for compatibility
-            'f1': f1_score(y_true, y_pred, average='weighted'),
+            'f1': f1_score(y_true, y_pred, average='binary'),
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='weighted'),
-            'recall': recall_score(y_true, y_pred, average='weighted'),
+            'precision': precision_score(y_true, y_pred, average='binary'),
+            'recall': recall_score(y_true, y_pred, average='binary'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
         log_message(log_filepath, f"Metrics: {metrics}")

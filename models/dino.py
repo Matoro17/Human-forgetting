@@ -219,7 +219,7 @@ class DINOTrainer:
             y_true, y_pred, average=None, labels=[0,1]
         )
         metrics = {
-            'f1_macro': f1_score(y_true, y_pred, average='macro'),
+            'f1_macro': f1_score(y_true, y_pred, average='binary'),
             'f1_positive': f1[1],
             'recall_positive': recall[1],
             'precision_positive': precision[1],
@@ -227,8 +227,8 @@ class DINOTrainer:
             # Keep original metrics for compatibility
             'f1': f1_score(y_true, y_pred, average='weighted'),
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='weighted'),
-            'recall': recall_score(y_true, y_pred, average='weighted'),
+            'precision': precision_score(y_true, y_pred, average='binary'),
+            'recall': recall_score(y_true, y_pred, average='binary'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
         log_message(log_filepath, f"Metrics: {metrics}")
