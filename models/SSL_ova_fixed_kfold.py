@@ -41,7 +41,7 @@ ARCHITECTURES = [
 # Environment setup
 load_dotenv()
 # This dataset doesn't have class balance
-BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
+BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl_PAS/")
 RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -100,6 +100,7 @@ class UnifiedExperimentRunner:
         return transforms.Compose(base_transforms)
 
     def _run_single_fold(self, class_name: str, fold: int) -> Dict:
+        set_seeds(42)
         log_message(log_filepath, f"\nStarting {self.architecture} - {class_name} - Fold {fold+1}")
         
         # Initialize fresh model and trainer
@@ -182,6 +183,13 @@ class UnifiedExperimentRunner:
     def run_full_experiment(self):
         for class_name in CLASSES:
             self.run_class_experiment(class_name)
+
+def set_seeds(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
