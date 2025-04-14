@@ -114,6 +114,8 @@ class DINOTrainer:
         self.fine_tune_time = 0.0
 
     def train(self, train_loader, epochs):
+        self.best_loss = float('inf')
+        self.early_stopping_counter = 0
         self.loss_history = []
         self.model.train()
         start_time = time.time()
@@ -149,9 +151,12 @@ class DINOTrainer:
                 if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
                     log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
                     break
-            return self.loss_history
+        
+        return self.loss_history
 
     def fine_tune(self, train_loader, num_classes, epochs):
+        self.best_loss = float('inf')
+        self.early_stopping_counter = 0
         self.acc_history = []
         self.model.classification_head = nn.Linear(256, num_classes).to(self.device)
         self.optimizer = Adam([
@@ -159,7 +164,8 @@ class DINOTrainer:
             {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
         ])
         
-        class_counts = torch.bincount(torch.tensor(train_loader.dataset.dataset.labels))
+        labels = [y for _, y in train_loader.dataset]  # Collect labels from all samples
+        class_counts = torch.bincount(torch.tensor(labels))
         class_weights = 1. / class_counts.float()
         class_weights = class_weights.to(self.device)
                 
@@ -213,16 +219,16 @@ class DINOTrainer:
             y_true, y_pred, average=None, labels=[0,1]
         )
         metrics = {
-            'f1_macro': f1_score(y_true, y_pred, average='macro'),
+            'f1_macro': f1_score(y_true, y_pred, average='binary'),
             'f1_positive': f1[1],
             'recall_positive': recall[1],
             'precision_positive': precision[1],
             'support_positive': np.sum(y_true),
             # Keep original metrics for compatibility
-            'f1': f1_score(y_true, y_pred, average='weighted'),
+            'f1': f1_score(y_true, y_pred, average='binary'),
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='weighted'),
-            'recall': recall_score(y_true, y_pred, average='weighted'),
+            'precision': precision_score(y_true, y_pred, average='binary'),
+            'recall': recall_score(y_true, y_pred, average='binary'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
         log_message(log_filepath, f"Metrics: {metrics}")
