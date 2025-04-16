@@ -98,7 +98,6 @@ class UnifiedExperimentRunner:
         return transforms.Compose(base_transforms)
 
     def _run_single_fold(self, class_name: str, fold: int) -> Dict:
-        set_seeds(42)
         log_message(log_filepath, f"\nStarting {self.architecture} - {class_name} - Fold {fold+1}")
         
         # Initialize fresh model and trainer
@@ -137,6 +136,7 @@ class UnifiedExperimentRunner:
         trainer.fine_tune(train_loader, num_classes=2, epochs=NUM_EPOCHS)
         
         # Evaluation
+        set_seeds(42)
         metrics = trainer.evaluate(val_loader)
         emissions = tracker.stop()
         total_time = time.time() - start_time
