@@ -143,36 +143,37 @@ class DINOTrainer:
                 global_views = [v.to(self.device) for v in views[:2]]
                 local_views = [v.to(self.device) for v in views[2:]]
                 all_views = global_views + local_views
-                
+                batch_size = global_views[0].size(0)  # Get original batch size
+
                 # Student forward
                 student_out = [self.model(v) for v in all_views]
-                
+
                 # Teacher forward
                 with torch.no_grad():
-                    teacher_out = [teacher(v) for v in global_views]
-                    teacher_out = torch.cat(teacher_out)
+                    teacher_out = torch.cat([teacher(v) for v in global_views])
                     self.center = self.center * 0.9 + teacher_out.mean(0) * 0.1
                     teacher_out = (teacher_out - self.center) / 0.04
-                
+                    
+                    # Split teacher outputs for global views
+                    teacher_global1, teacher_global2 = torch.chunk(teacher_out, 2, dim=0)
+
                 # Compute loss
                 loss = 0
-                teacher_probs = F.softmax(teacher_out, dim=-1)
-                for s in student_out:
-                    student_probs = F.log_softmax(s / 0.1, dim=-1)
-                    loss += -torch.mean(torch.sum(teacher_probs * student_probs, dim=-1))
-                loss /= len(student_out)
-                
-                # Optimize
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                
-                # EMA update
-                with torch.no_grad():
-                    for t_param, s_param in zip(teacher.parameters(), self.model.parameters()):
-                        t_param.data = t_param.data * momentum + s_param.data * (1 - momentum)
+                for i, s_out in enumerate(student_out):
+                    # Select appropriate teacher output
+                    if i == 0:  # First global view
+                        t_probs = F.softmax(teacher_global1, dim=-1)
+                    elif i == 1:  # Second global view
+                        t_probs = F.softmax(teacher_global2, dim=-1)
+                    else:  # Local views use average of both global outputs
+                        avg_teacher = (teacher_global1 + teacher_global2) / 2
+                        t_probs = F.softmax(avg_teacher, dim=-1)
+                    
+                    student_probs = F.log_softmax(s_out / 0.1, dim=-1)
+                    loss += -torch.mean(torch.sum(t_probs * student_probs, dim=-1))
                 
                 epoch_loss += loss.item()
+                loss /= len(student_out)
             
             loss_history.append(epoch_loss/len(train_loader))
         return loss_history
