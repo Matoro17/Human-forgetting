@@ -99,7 +99,7 @@ class UnifiedExperimentRunner:
 
     def _run_single_fold(self, class_name: str, fold: int) -> Dict:
         log_message(log_filepath, f"\nStarting {self.architecture} - {class_name} - Fold {fold+1}")
-        
+        set_seeds(42)
         # Initialize fresh model and trainer
         model = self._get_model()
         trainer = self._get_trainer(model)
@@ -121,7 +121,13 @@ class UnifiedExperimentRunner:
         val_dataset = SymlinkedDataset(val_dir, transform=transform, binary_classification=True, positive_classes=positive_classes)
 
         # Create loaders
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+        generator = torch.Generator().manual_seed(42)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            generator=generator  # Fixed generator
+        )
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         # Training and evaluation
@@ -136,7 +142,7 @@ class UnifiedExperimentRunner:
         trainer.fine_tune(train_loader, num_classes=2, epochs=NUM_EPOCHS)
         
         # Evaluation
-        set_seeds(42)
+        # set_seeds(42)
         metrics = trainer.evaluate(val_loader)
         emissions = tracker.stop()
         total_time = time.time() - start_time
