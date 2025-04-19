@@ -102,6 +102,7 @@ class DINOHead(nn.Module):
 class DINO(nn.Module):
     def __init__(self, architecture='resnet18'):
         super().__init__()
+        self.architecture = architecture 
         self.backbone = models.__dict__[architecture](pretrained=False)
         in_dim = self.backbone.fc.in_features
         self.backbone.fc = nn.Identity()
