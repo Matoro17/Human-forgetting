@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
 # Import all model implementations
 from dino import DINO, DINOTrainer, get_transform as dino_transform, log_message, save_metrics_to_txt
+from dino import MultiCropTransform
 from vitdino import ViTDINO, ViTTrainer, get_transform as vit_transform
 from simclr import SimCLR, SimCLRTrainer, get_transform as simclr_transform
 from datasets.symlinked_dataset import SymlinkedDataset
@@ -90,12 +91,14 @@ class UnifiedExperimentRunner:
         raise ValueError(f"Unsupported trainer for: {self.architecture}")
 
     def _get_transform(self, mean, std):
-        base_transforms = [
-            transforms.Resize(self.input_size),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
-        ]
-        return transforms.Compose(base_transforms)
+        if self.architecture.startswith('dino'):
+            return MultiCropTransform()
+        else:
+            return transforms.Compose([
+                transforms.Resize(self.input_size),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std)
+            ])
 
     def _run_single_fold(self, class_name: str, fold: int) -> Dict:
         log_message(log_filepath, f"\nStarting {self.architecture} - {class_name} - Fold {fold+1}")
