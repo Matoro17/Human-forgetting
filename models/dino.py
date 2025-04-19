@@ -18,6 +18,8 @@ import time
 from codecarbon import OfflineEmissionsTracker
 from dotenv import load_dotenv
 from datetime import datetime
+import math
+import random
 
 # Add project root to PYTHONPATH
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
@@ -36,217 +38,193 @@ NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 50))
 EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10))
 EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
 
-class DINO(nn.Module):
-    def __init__(self, architecture='resnet50', use_pretrained=True, out_dim=256, momentum=0.996):
-        super(DINO, self).__init__()
-        self.architecture = architecture
-        self.student = self._create_network(architecture, use_pretrained, out_dim)
-        self.teacher = self._create_network(architecture, use_pretrained, out_dim)
-        self.momentum = momentum
-        self._initialize_teacher()
-        self.classification_head = None
+def set_seeds(seed=42):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-    def _create_network(self, architecture, use_pretrained, out_dim):
-        # Create backbone
-        if architecture == 'resnet18':
-            backbone = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if use_pretrained else None)
-            in_features = 512
-            backbone.fc = nn.Identity()
-        elif architecture == 'resnet50':
-            backbone = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1 if use_pretrained else None)
-            in_features = 2048
-            backbone.fc = nn.Identity()
-        elif architecture == 'resnet101':
-            backbone = models.resnet101(weights=ResNet101_Weights.IMAGENET1K_V1 if use_pretrained else None)
-            in_features = 2048
-            backbone.fc = nn.Identity()
-        elif architecture == 'vit_b_16':
-            backbone = models.vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1 if use_pretrained else None)
-            in_features = 768
-            backbone.heads = nn.Identity()
-        else:
-            raise ValueError(f"Unsupported architecture: {architecture}")
-
-        # Create projection head
-        projection_head = nn.Sequential(
-            nn.Linear(in_features, 2048),
-            nn.GELU(),
-            nn.Linear(2048, out_dim)
+class MultiCropTransform:
+    def __init__(self, global_size=224, local_size=96, num_local=4):
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], 
+            std=[0.229, 0.224, 0.225]
         )
         
-        # if self.classification_head is not None:
-        #     # Initialize bias to -log((1-p)/p) where p is positive class ratio
-        #     pos_ratio = len(np.where(np.array(self.labels) == 1)[0])/len(self.labels)
-        #     bias_init = -torch.log(torch.tensor((1-pos_ratio)/pos_ratio))
-        #     self.classification_head.bias.data = torch.tensor([-bias_init, bias_init])
-
-        return nn.Sequential(backbone, projection_head)
-
-    def _initialize_teacher(self):
-        for s_param, t_param in zip(self.student.parameters(), self.teacher.parameters()):
-            t_param.data.copy_(s_param.data)
-            t_param.requires_grad = False
-
-    def update_teacher(self):
-        with torch.no_grad():
-            for s_param, t_param in zip(self.student.parameters(), self.teacher.parameters()):
-                t_param.data = self.momentum * t_param.data + (1 - self.momentum) * s_param.data
-
-    def forward(self, x):
-        student_out = self.student(x)
-        with torch.no_grad():
-            teacher_out = self.teacher(x)
-        return student_out, teacher_out
-
-    def loss(self, student, teacher):
-        student = F.normalize(student, dim=-1)
-        teacher = F.normalize(teacher, dim=-1)
-        return 2 - 2 * (student * teacher).sum(dim=-1).mean()
-
-class DINOTrainer:
-    def __init__(self, model, device='cuda', lr=1e-3):
-        self.model = model.to(device)
-        self.device = device
-        self.optimizer = Adam(self.model.parameters(), lr=lr)
-        self.best_loss = float('inf')
-        self.early_stopping_counter = 0
-        self.train_time = 0.0
-        self.fine_tune_time = 0.0
-
-    def train(self, train_loader, epochs):
-        self.best_loss = float('inf')
-        self.early_stopping_counter = 0
-        self.loss_history = []
-        self.model.train()
-        start_time = time.time()
-        
-        for epoch in range(epochs):
-            epoch_start = time.time()
-            total_loss = 0
-            for x, _ in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
-                x = x.to(self.device)
-                student, teacher = self.model(x)
-                loss = self.model.loss(student, teacher)
-                
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                self.model.update_teacher()
-                
-                total_loss += loss.item()
-
-            epoch_time = time.time() - epoch_start
-            self.train_time += epoch_time
-            
-            avg_loss = total_loss / len(train_loader)
-            self.loss_history.append(avg_loss)
-            log_message(log_filepath, f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
-            
-            # Early stopping
-            if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
-                self.best_loss = avg_loss
-                self.early_stopping_counter = 0
-            else:
-                self.early_stopping_counter += 1
-                if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
-                    log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
-                    break
-        
-        return self.loss_history
-
-    def fine_tune(self, train_loader, num_classes, epochs):
-        self.best_loss = float('inf')
-        self.early_stopping_counter = 0
-        self.acc_history = []
-        self.model.classification_head = nn.Linear(256, num_classes).to(self.device)
-        self.optimizer = Adam([
-            {'params': self.model.student.parameters(), 'lr': 1e-4},
-            {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
+        self.global1 = transforms.Compose([
+            transforms.RandomResizedCrop(global_size, scale=(0.4, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([transforms.GaussianBlur(3)], p=0.5),
+            transforms.ToTensor(),
+            normalize
         ])
         
-        labels = [y for _, y in train_loader.dataset]  # Collect labels from all samples
-        class_counts = torch.bincount(torch.tensor(labels))
-        class_weights = 1. / class_counts.float()
-        class_weights = class_weights.to(self.device)
-                
-        criterion = nn.CrossEntropyLoss(weight=class_weights)        
-        self.model.train()
-        start_time = time.time()
+        self.global2 = transforms.Compose([
+            transforms.RandomResizedCrop(global_size, scale=(0.4, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor(),
+            normalize
+        ])
         
-        for epoch in range(epochs):
-            total_loss = 0
-            for x, y in tqdm(train_loader, desc=f"Fine-tune Epoch {epoch+1}/{epochs}"):
-                x, y = x.to(self.device), y.to(self.device)
-                student_out, _ = self.model(x)
-                logits = self.model.classification_head(student_out)
-                loss = criterion(logits, y)
+        self.local = transforms.Compose([
+            transforms.RandomResizedCrop(local_size, scale=(0.05, 0.4)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor(),
+            normalize
+        ])
+        self.num_local = num_local
+
+    def __call__(self, image):
+        crops = [self.global1(image), self.global2(image)]
+        crops += [self.local(image) for _ in range(self.num_local)]
+        return crops
+
+class DINOHead(nn.Module):
+    def __init__(self, in_dim, out_dim=256, hidden_dim=2048):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, out_dim),
+        )
+        
+    def forward(self, x):
+        return F.normalize(self.mlp(x), dim=-1)
+
+class DINO(nn.Module):
+    def __init__(self, architecture='resnet18'):
+        super().__init__()
+        self.backbone = models.__dict__[architecture](pretrained=False)
+        in_dim = self.backbone.fc.in_features
+        self.backbone.fc = nn.Identity()
+        
+        self.projector = DINOHead(in_dim)
+        self.classifier = None  # Will be added during fine-tuning
+
+    def forward(self, x, return_features=False):
+        features = self.backbone(x)
+        projected = self.projector(features)
+        if return_features or self.classifier is None:
+            return projected
+        return self.classifier(projected)
+
+class DINOTrainer:
+    def __init__(self, model, device='cuda', base_lr=0.0005):
+        set_seeds(42)
+        self.model = model.to(device)
+        self.device = device
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr)
+        self.center = torch.zeros(1, 256, device=device)
+        self.ema_alpha = 0.996
+
+    def train(self, train_loader, num_epochs):
+        teacher = DINO(self.model.architecture).to(self.device)
+        teacher.load_state_dict(self.model.state_dict())
+        teacher.requires_grad_(False)
+        
+        self.model.train()
+        loss_history = []
+        
+        for epoch in range(num_epochs):
+            epoch_loss = 0
+            momentum = 0.5 * (1. + math.cos(math.pi * epoch / num_epochs)) * 0.996
+            
+            for views, _ in train_loader:
+                # Process multi-crop views
+                global_views = [v.to(self.device) for v in views[:2]]
+                local_views = [v.to(self.device) for v in views[2:]]
+                all_views = global_views + local_views
                 
+                # Student forward
+                student_out = [self.model(v) for v in all_views]
+                
+                # Teacher forward
+                with torch.no_grad():
+                    teacher_out = [teacher(v) for v in global_views]
+                    teacher_out = torch.cat(teacher_out)
+                    self.center = self.center * 0.9 + teacher_out.mean(0) * 0.1
+                    teacher_out = (teacher_out - self.center) / 0.04
+                
+                # Compute loss
+                loss = 0
+                teacher_probs = F.softmax(teacher_out, dim=-1)
+                for s in student_out:
+                    student_probs = F.log_softmax(s / 0.1, dim=-1)
+                    loss += -torch.mean(torch.sum(teacher_probs * student_probs, dim=-1))
+                loss /= len(student_out)
+                
+                # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 
-                total_loss += loss.item()
+                # EMA update
+                with torch.no_grad():
+                    for t_param, s_param in zip(teacher.parameters(), self.model.parameters()):
+                        t_param.data = t_param.data * momentum + s_param.data * (1 - momentum)
+                
+                epoch_loss += loss.item()
             
-            avg_loss = total_loss / len(train_loader)
-            self.acc_history.append(avg_loss)
-            log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
-            # Early stopping
-            if avg_loss < self.best_loss - EARLY_STOPPING_DELTA:
-                self.best_loss = avg_loss
-                self.early_stopping_counter = 0
-            else:
-                self.early_stopping_counter += 1
-                if self.early_stopping_counter >= EARLY_STOPPING_PATIENCE:
-                    log_message(log_filepath, f"Early stopping at epoch {epoch+1}")
-                    break
+            loss_history.append(epoch_loss/len(train_loader))
+        return loss_history
+
+    def fine_tune(self, train_loader, num_classes, epochs):
+        # Freeze backbone and add classifier
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
+        self.model.classifier = nn.Linear(256, num_classes).to(self.device)
+        optimizer = torch.optim.Adam(self.model.classifier.parameters(), lr=1e-3)
+        criterion = nn.CrossEntropyLoss()
         
-        self.fine_tune_time = time.time() - start_time
-        return self.acc_history
+        self.model.train()
+        for epoch in range(epochs):
+            total_loss = 0
+            for x, y in train_loader:
+                x, y = x.to(self.device), y.to(self.device)
+                logits = self.model(x)
+                loss = criterion(logits, y)
+                
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+                
+        return total_loss/len(train_loader)
 
     def evaluate(self, test_loader):
         self.model.eval()
         y_true, y_pred = [], []
+        
         with torch.no_grad():
             for x, y in test_loader:
-                x, y = x.to(self.device), y.cpu()
-                student_out, _ = self.model(x)
-                logits = self.model.classification_head(student_out)
+                x = x.to(self.device)
+                logits = self.model(x)
                 preds = torch.argmax(logits, dim=1).cpu()
                 y_true.extend(y.numpy())
                 y_pred.extend(preds.numpy())
-
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            y_true, y_pred, average=None, labels=[0,1]
-        )
+        
         metrics = {
-            'f1_macro': f1_score(y_true, y_pred, average='binary'),
-            'f1_positive': f1[1],
-            'recall_positive': recall[1],
-            'precision_positive': precision[1],
-            'support_positive': np.sum(y_true),
-            # Keep original metrics for compatibility
-            'f1': f1_score(y_true, y_pred, average='binary'),
             'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='binary'),
-            'recall': recall_score(y_true, y_pred, average='binary'),
+            'f1': f1_score(y_true, y_pred, average='binary'),
             'confusion_matrix': confusion_matrix(y_true, y_pred)
         }
-        log_message(log_filepath, f"Metrics: {metrics}")
         return metrics
 
 def get_transform(architecture):
-    if 'vit' in architecture:
-        return transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
-    else:
-        return transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
+    return MultiCropTransform() if 'dino' in architecture else transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
 
 def run_experiment(architecture, device):
     log_message(log_filepath,f"\n{'='*40}\nExperiment with Architecture: {architecture}\n{'='*40}")
@@ -450,4 +428,16 @@ def binary_main():
 
 
 if __name__ == "__main__":
-    binary_main()
+    # Initialize with proper transforms
+    transform = MultiCropTransform()
+    dataset = SymlinkedDataset(root_dir="your/data/path", transform=transform)
+    loader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=4)
+
+    # Create model and trainer
+    model = DINO(backbone='resnet50')
+    trainer = DINOTrainer(model)
+
+    # Training loop
+    for epoch in range(100):
+        loss = trainer.train_epoch(loader, epoch, 100)
+        print(f"Epoch {epoch+1}, Loss: {loss:.4f}")
