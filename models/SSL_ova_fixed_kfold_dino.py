@@ -28,8 +28,8 @@ ARCHITECTURES = ['dino_resnet18']
 
 # Environment setup
 load_dotenv()
-BASE_DATA_DIR = os.getenv("DATASET_DIR", "/path/to/cross_validation/fsl/")
-RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
+BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
+RESULTS_DIR = os.getenv("RESULTS_DIR", "./results_dino")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Initialize logging
