@@ -42,8 +42,8 @@ def main():
     args = parser.parse_args()
     print(vars(args))
 
-    vit_name, dim = "deit_small_patch16_224", 384
-    base_path = pathlib.Path("fsl/0_Amiloidose/fold0")
+    vit_name, dim = "dinov2_vitg14", 384
+    base_path = pathlib.Path("/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/0_Amiloidose/fold0")
     path_dataset_train = base_path / "train"
     path_dataset_val = base_path / "val"
 
