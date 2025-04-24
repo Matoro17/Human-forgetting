@@ -99,17 +99,22 @@ def main():
     student = MultiCropWrapper(
         student_backbone,
         Head(
-            in_dim=MODEL_CONFIG["embed_dim"],
+            in_dim=1536,  # Must match ViT-g's embedding dimension
             out_dim=args.out_dim,
-            hidden_dim=2048,
-            bottleneck_dim=512,
+            hidden_dim=2048,  # Increased hidden dimension
+            bottleneck_dim=512,  # Must match between student and teacher
             norm_last_layer=args.norm_last_layer
         )
     ).to(args.device)
-    
+
     teacher = MultiCropWrapper(
         teacher_backbone,
-        Head(MODEL_CONFIG["embed_dim"], args.out_dim)
+        Head(
+            in_dim=1536,  # Must match student dimension
+            out_dim=args.out_dim,
+            hidden_dim=2048,  # Must match student
+            bottleneck_dim=512  # Must match student
+        )
     ).to(args.device)
     
     # Initialize teacher with student weights
