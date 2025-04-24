@@ -5,11 +5,13 @@ import timm
 import torch
 import torchvision.transforms as transforms
 import tqdm
+from sklearn.metrics import f1_score
+from sklearn.neighbors import KNeighborsClassifier
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import ImageFolder
 
-from evaluation import compute_embedding, compute_knn
+from evaluation import compute_embedding
 from utils import DataAugmentation, Head, Loss, MultiCropWrapper, clip_gradients
 
 
@@ -23,10 +25,10 @@ def main():
         "-d", "--device", type=str, choices=("cpu", "cuda"), default="cuda"
     )
     parser.add_argument("-l", "--logging-freq", type=int, default=200)
-    parser.add_argument("--momentum-teacher", type=int, default=0.9995)
+    parser.add_argument("--momentum-teacher", type=float, default=0.9995)
     parser.add_argument("-c", "--n-crops", type=int, default=4)
-    parser.add_argument("-e", "--n-epochs", type=int, default=5)
-    parser.add_argument("-o", "--out-dim", type=int, default=1024)
+    parser.add_argument("-e", "--n-epochs", type=int, default=20)
+    parser.add_argument("-o", "--out-dim", type=int, default=10)
     parser.add_argument("-t", "--tensorboard-dir", type=str, default="logs")
     parser.add_argument("--clip-grad", type=float, default=2.0)
     parser.add_argument("--norm-last-layer", action="store_true")
@@ -35,13 +37,12 @@ def main():
     parser.add_argument("--student-temp", type=float, default=0.1)
     parser.add_argument("--pretrained", action="store_true")
     parser.add_argument("-w", "--weight-decay", type=float, default=0.4)
+    parser.add_argument("--early-stop-patience", type=int, default=5)
 
     args = parser.parse_args()
     print(vars(args))
-    
-    # Parameters
+
     vit_name, dim = "deit_small_patch16_224", 384
-    # Update paths to match the provided folder structure
     base_path = pathlib.Path("fsl/0_Amiloidose/fold0")
     path_dataset_train = base_path / "train"
     path_dataset_val = base_path / "val"
@@ -50,7 +51,7 @@ def main():
     device = torch.device(args.device)
     n_workers = 4
 
-    # Data related
+    # Data preparation
     transform_aug = DataAugmentation(size=224, n_local_crops=args.n_crops - 2)
     transform_plain = transforms.Compose(
         [
@@ -95,11 +96,8 @@ def main():
         num_workers=n_workers,
     )
 
-    # Logging
     writer = SummaryWriter(logging_path)
-    # writer.add_text("arguments", json.dumps(vars(args)))
 
-    # Neural network related
     student_vit = timm.create_model(vit_name, pretrained=args.pretrained)
     teacher_vit = timm.create_model(vit_name, pretrained=args.pretrained)
 
@@ -118,12 +116,12 @@ def main():
     for p in teacher.parameters():
         p.requires_grad = False
 
-    # Loss related
     loss_inst = Loss(
         args.out_dim,
         teacher_temp=args.teacher_temp,
         student_temp=args.student_temp,
     ).to(device)
+
     lr = 0.0005 * args.batch_size / 256
     optimizer = torch.optim.AdamW(
         student.parameters(),
@@ -131,9 +129,9 @@ def main():
         weight_decay=args.weight_decay,
     )
 
-    # Training loop
     n_batches = len(data_loader_train_aug)
-    best_acc = 0
+    best_f1 = 0
+    steps_since_best = 0
     n_steps = 0
 
     for e in range(args.n_epochs):
@@ -143,10 +141,11 @@ def main():
             if n_steps % args.logging_freq == 0:
                 student.eval()
 
-                # Embedding: Use dataset_val_plain.classes for metadata
+                # Compute embeddings for TensorBoard visualization (subset)
                 embs, imgs, labels_ = compute_embedding(
                     student.backbone,
                     data_loader_val_plain_subset,
+                    device=device,
                 )
                 writer.add_embedding(
                     embs,
@@ -156,16 +155,47 @@ def main():
                     tag="embeddings",
                 )
 
-                # KNN evaluation
-                current_acc = compute_knn(
-                    student.backbone,
-                    data_loader_train_plain,
-                    data_loader_val_plain,
+                # Compute F1 score on the full training and validation sets
+                # Get training embeddings and labels
+                train_embs, _, train_labels = compute_embedding(
+                    student.backbone, data_loader_train_plain, device=device
                 )
-                writer.add_scalar("knn-accuracy", current_acc, n_steps)
-                if current_acc > best_acc:
+                train_embs_np = train_embs.cpu().numpy()
+                train_labels_np = train_labels.cpu().numpy()
+
+                # Get validation embeddings and labels
+                val_embs, _, val_labels = compute_embedding(
+                    student.backbone, data_loader_val_plain, device=device
+                )
+                val_embs_np = val_embs.cpu().numpy()
+                val_labels_np = val_labels.cpu().numpy()
+
+                # Train KNN classifier
+                knn = KNeighborsClassifier(n_neighbors=5)
+                knn.fit(train_embs_np, train_labels_np)
+
+                # Predict on validation set
+                val_pred = knn.predict(val_embs_np)
+
+                # Compute F1 score for positive class (assuming label 1)
+                current_f1 = f1_score(val_labels_np, val_pred, pos_label=1)
+                writer.add_scalar("f1-score-positive", current_f1, n_steps)
+
+                # Early stopping logic
+                if current_f1 > best_f1:
                     torch.save(student, logging_path / "best_model.pth")
-                    best_acc = current_acc
+                    best_f1 = current_f1
+                    steps_since_best = 0
+                else:
+                    steps_since_best += 1
+                    print(
+                        f"No improvement in F1 score. Steps without improvement: {steps_since_best}/{args.early_stop_patience}"
+                    )
+                    if steps_since_best >= args.early_stop_patience:
+                        print(
+                            f"Early stopping triggered at step {n_steps}. Best F1 score: {best_f1:.4f}"
+                        )
+                        return  # Early exit
 
                 student.train()
 
@@ -190,7 +220,7 @@ def main():
                         (1 - args.momentum_teacher) * student_ps.detach().data
                     )
 
-            writer.add_scalar("train_loss", loss, n_steps)
+            writer.add_scalar("train_loss", loss.item(), n_steps)
             n_steps += 1
 
 
