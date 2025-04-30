@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 import pathlib
 import torch
 import torch.nn as nn
@@ -10,7 +11,6 @@ from torchvision.datasets import ImageFolder
 from sklearn.metrics import f1_score
 from sklearn.neighbors import KNeighborsClassifier
 
-# Import custom classes
 from utils import DataAugmentation, Head, Loss, MultiCropWrapper, clip_gradients
 
 def compute_embedding(backbone, data_loader, device="cuda"):
@@ -34,40 +34,8 @@ def compute_embedding(backbone, data_loader, device="cuda"):
         torch.cat(labels, dim=0)
     )
 
-def main():
-    parser = argparse.ArgumentParser(
-        "DINO Training with ViT",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    # Training parameters
-    parser.add_argument("-b", "--batch-size", type=int, default=32)
-    parser.add_argument("-d", "--device", type=str, choices=("cpu", "cuda"), default="cuda")
-    parser.add_argument("-l", "--logging-freq", type=int, default=200)
-    parser.add_argument("--momentum-teacher", type=float, default=0.9995)
-    parser.add_argument("-c", "--n-crops", type=int, default=4)
-    parser.add_argument("-e", "--n-epochs", type=int, default=20)
-    parser.add_argument("-o", "--out-dim", type=int, default=256)
-    parser.add_argument("-t", "--tensorboard-dir", type=str, default="logs")
-    parser.add_argument("--clip-grad", type=float, default=2.0)
-    parser.add_argument("--norm-last-layer", action="store_true")
-    parser.add_argument("--batch-size-eval", type=int, default=64)
-    parser.add_argument("--teacher-temp", type=float, default=0.04)
-    parser.add_argument("--student-temp", type=float, default=0.1)
-    parser.add_argument("--pretrained", action="store_true")
-    parser.add_argument("-w", "--weight-decay", type=float, default=0.4)
-    parser.add_argument("--early-stop-patience", type=int, default=3)
-    parser.add_argument("--model-type", choices=["vit_s", "vit_b"], default="vit_b")
-    
-    args = parser.parse_args()
-    print("Training configuration:")
-    print(vars(args))
-
-    # Model configuration
-    model_config = {
-        "vit_s": {"name": "dinov2_vits14", "dim": 384},
-        "vit_b": {"name": "dinov2_vitb14", "dim": 768}
-    }[args.model_type]
-
+def train_single_fold(args, class_dir, fold_num, tensorboard_root, checkpoints_root):
+    """Train a binary classifier for a single fold."""
     # Data preparation
     transform_aug = DataAugmentation(
         size=224,
@@ -83,10 +51,14 @@ def main():
     ])
 
     # Dataset setup
-    base_path = pathlib.Path("/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/0_Amiloidose/fold0")
-    dataset_train_aug = ImageFolder(base_path / "train", transform=transform_aug)
-    dataset_train_plain = ImageFolder(base_path / "train", transform=transform_plain)
-    dataset_val_plain = ImageFolder(base_path / "val", transform=transform_plain)
+    fold_path = class_dir / f"fold{fold_num}"
+    if not fold_path.exists():
+        print(f"Skipping fold {fold_num} - directory not found")
+        return
+
+    dataset_train_aug = ImageFolder(fold_path / "train", transform=transform_aug)
+    dataset_train_plain = ImageFolder(fold_path / "train", transform=transform_plain)
+    dataset_val_plain = ImageFolder(fold_path / "val", transform=transform_plain)
 
     # DataLoaders
     data_loader_train_aug = DataLoader(
@@ -97,6 +69,12 @@ def main():
         pin_memory=True,
         drop_last=True
     )
+
+    # Model configuration
+    model_config = {
+        "vit_s": {"name": "dinov2_vits14", "dim": 384},
+        "vit_b": {"name": "dinov2_vitb14", "dim": 768}
+    }[args.model_type]
 
     # Model initialization
     def create_model():
@@ -133,8 +111,15 @@ def main():
         weight_decay=args.weight_decay
     )
 
+    # Create save directories
+    class_name = class_dir.name
+    save_dir = checkpoints_root / class_name / f"fold{fold_num}"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    best_model_path = save_dir / "best_model.pth"
+    final_model_path = save_dir / "final_model.pth"
+
     # Training setup
-    writer = SummaryWriter(args.tensorboard_dir)
+    writer = SummaryWriter(tensorboard_root / f"fold{fold_num}")
     best_f1 = 0
     steps_since_best = 0
     n_steps = 0
@@ -201,16 +186,16 @@ def main():
                     val_pred = knn.predict(val_embs.numpy())
                     current_f1 = f1_score(val_labels.numpy(), val_pred, pos_label=1)
 
-                    # Early stopping
+                    # Early stopping and model saving
                     if current_f1 > best_f1:
-                        torch.save(student.state_dict(), pathlib.Path(args.tensorboard_dir) / "best_model.pth")
+                        torch.save(student.state_dict(), best_model_path)
                         best_f1 = current_f1
                         steps_since_best = 0
                     else:
                         steps_since_best += 1
                         if steps_since_best >= args.early_stop_patience:
                             print(f"Early stopping at step {n_steps} | Best F1: {best_f1:.4f}")
-                            return
+                            break
 
                     # TensorBoard logging
                     writer.add_scalar("train_loss", loss.item(), n_steps)
@@ -221,7 +206,76 @@ def main():
                 n_steps += 1
 
     finally:
+        # Save final model state
+        torch.save(student.state_dict(), final_model_path)
+        print(f"Saved final model to: {final_model_path}")
         writer.close()
+
+def main():
+    parser = argparse.ArgumentParser(
+        "DINO Training with ViT",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    # Training parameters
+    parser.add_argument("-b", "--batch-size", type=int, default=32)
+    parser.add_argument("-d", "--device", type=str, choices=("cpu", "cuda"), default="cuda")
+    parser.add_argument("-l", "--logging-freq", type=int, default=200)
+    parser.add_argument("--momentum-teacher", type=float, default=0.9995)
+    parser.add_argument("-c", "--n-crops", type=int, default=4)
+    parser.add_argument("-e", "--n-epochs", type=int, default=20)
+    parser.add_argument("-o", "--out-dim", type=int, default=256)
+    parser.add_argument("-t", "--tensorboard-dir", type=str, default="logs")
+    parser.add_argument("--clip-grad", type=float, default=2.0)
+    parser.add_argument("--norm-last-layer", action="store_true")
+    parser.add_argument("--batch-size-eval", type=int, default=64)
+    parser.add_argument("--teacher-temp", type=float, default=0.04)
+    parser.add_argument("--student-temp", type=float, default=0.1)
+    parser.add_argument("--pretrained", action="store_true")
+    parser.add_argument("-w", "--weight-decay", type=float, default=0.4)
+    parser.add_argument("--early-stop-patience", type=int, default=3)
+    parser.add_argument("--model-type", choices=["vit_s", "vit_b"], default="vit_b")
+    parser.add_argument("--checkpoints-dir", type=str, default="checkpoints",
+                       help="Root directory for saving model checkpoints")
+    
+    args = parser.parse_args()
+    print("Global training configuration:")
+    print(vars(args))
+
+    # Create root directories
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    checkpoints_root = pathlib.Path(args.checkpoints_dir) / timestamp
+    checkpoints_root.mkdir(parents=True, exist_ok=True)
+    
+    # Save config file
+    with open(checkpoints_root / "config.txt", "w") as f:
+        f.write("Training configuration:\n")
+        for k, v in vars(args).items():
+            f.write(f"{k}: {v}\n")
+
+    # Process each class and each fold
+    fsl_root = pathlib.Path("/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl")
+    class_dirs = sorted([d for d in fsl_root.iterdir() if d.is_dir()])
+
+    for class_dir in class_dirs:
+        class_name = class_dir.name
+        print(f"\n{'='*40}")
+        print(f"Processing class: {class_name}")
+        print(f"{'='*40}")
+
+        # Create class-specific log directory
+        tensorboard_dir = pathlib.Path(args.tensorboard_dir) / timestamp / class_name
+        tensorboard_dir.mkdir(parents=True, exist_ok=True)
+
+        # Process all 5 folds
+        for fold_num in range(5):
+            print(f"\n{'='*20} Fold {fold_num} {'='*20}")
+            train_single_fold(
+                args,
+                class_dir,
+                fold_num,
+                tensorboard_dir,
+                checkpoints_root
+            )
 
 if __name__ == "__main__":
     main()
