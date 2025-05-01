@@ -16,32 +16,31 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
-# Recreate necessary components from training script
 class MultiCropWrapper(torch.nn.Module):
     def __init__(self, backbone, head):
         super().__init__()
         self.backbone = backbone
-        self.new_head = head  # Changed name to match checkpoint key
+        self.head = head  # Match training's attribute name
 
     def forward(self, x):
-        return self.new_head(self.backbone(x))
-
+        return self.head(self.backbone(x))
+    
 class Head(torch.nn.Module):
-    """EXACT reproduction of training head structure"""
+    """EXACT replica of training head structure"""
     def __init__(self, in_dim, out_dim, hidden_dim=512, bottleneck_dim=256):
         super().__init__()
         self.mlp = torch.nn.Sequential(
             torch.nn.Linear(in_dim, hidden_dim),
             torch.nn.GELU(),
-            torch.nn.Linear(hidden_dim, hidden_dim),  # Added extra layer
-            torch.nn.GELU(),                          # Matching training config
             torch.nn.Linear(hidden_dim, bottleneck_dim),
             torch.nn.LayerNorm(bottleneck_dim),
         )
-        self.last_layer = torch.nn.utils.weight_norm(
-            torch.nn.Linear(bottleneck_dim, out_dim, bias=False)
+        self.last_layer = torch.nn.Linear(bottleneck_dim, out_dim, bias=False)
+        
+        # Critical normalization from training code
+        self.last_layer.weight.data = torch.nn.functional.normalize(
+            self.last_layer.weight.data, p=2, dim=1
         )
-        self.last_layer.weight_g.data.fill_(1)  # Critical for parameter match
 
     def forward(self, x):
         x = self.mlp(x)
@@ -80,8 +79,12 @@ def evaluate_fold(checkpoint_path, data_path, model_type, device="cuda"):
         )
     model = MultiCropWrapper(backbone, head).to(device)
     
+    with torch.no_grad():
+        model.head.last_layer.weight.data = torch.nn.functional.normalize(
+            model.head.last_layer.weight.data, p=2, dim=1
+        )
     # Load trained weights
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device), strict=False)
     print(f"\nLoaded model from {checkpoint_path}")
 
     # Data transforms
