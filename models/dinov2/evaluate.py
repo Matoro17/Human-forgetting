@@ -27,24 +27,25 @@ class MultiCropWrapper(torch.nn.Module):
         return self.new_head(self.backbone(x))
 
 class Head(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=512, bottleneck_dim=256, norm_last_layer=True):
+    """EXACT reproduction of training head structure"""
+    def __init__(self, in_dim, out_dim, hidden_dim=512, bottleneck_dim=256):
         super().__init__()
-        self.mlp = torch.nn.Sequential(  # Changed name to match checkpoint
+        self.mlp = torch.nn.Sequential(
             torch.nn.Linear(in_dim, hidden_dim),
             torch.nn.GELU(),
+            torch.nn.Linear(hidden_dim, hidden_dim),  # Added extra layer
+            torch.nn.GELU(),                          # Matching training config
             torch.nn.Linear(hidden_dim, bottleneck_dim),
             torch.nn.LayerNorm(bottleneck_dim),
         )
-        self.last_layer = torch.nn.utils.weight_norm(  # Changed structure
+        self.last_layer = torch.nn.utils.weight_norm(
             torch.nn.Linear(bottleneck_dim, out_dim, bias=False)
         )
-        if norm_last_layer:
-            self.last_layer.weight_g.data.fill_(1)  # Match training configuration
+        self.last_layer.weight_g.data.fill_(1)  # Critical for parameter match
 
     def forward(self, x):
         x = self.mlp(x)
-        x = self.last_layer(x)
-        return x
+        return self.last_layer(x)
 
 def compute_embeddings(model, data_loader, device="cuda"):
     """Compute embeddings using model backbone"""
@@ -72,12 +73,11 @@ def evaluate_fold(checkpoint_path, data_path, model_type, device="cuda"):
     # Recreate model architecture
     backbone = torch.hub.load("facebookresearch/dinov2", model_config["name"])
     head = Head(
-        model_config["dim"],
-        256,  # Should match training's out_dim
-        hidden_dim=512,
-        bottleneck_dim=256,
-        norm_last_layer=True
-    )
+            in_dim=model_config["dim"],
+            out_dim=256,          # Must match training's out_dim
+            hidden_dim=512,       # Must match training's hidden_dim
+            bottleneck_dim=256    # Must match training's bottleneck_dim
+        )
     model = MultiCropWrapper(backbone, head).to(device)
     
     # Load trained weights
