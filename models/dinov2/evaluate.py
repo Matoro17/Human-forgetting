@@ -135,7 +135,8 @@ def evaluate_fold(checkpoint_path, data_path, model_type, device="cuda"):
         "accuracy": accuracy_score(y_val, y_pred),
         "precision": precision_score(y_val, y_pred, pos_label=1),
         "recall": recall_score(y_val, y_pred, pos_label=1),
-        "f1": f1_score(y_val, y_pred, pos_label=1),
+        "f1_binary": f1_score(y_val, y_pred, pos_label=1),  # Original F1
+        "f1_macro": f1_score(y_val, y_pred, average='macro'),  # New macro F1
         "auc": roc_auc_score(y_val, y_probs)
     }
     
@@ -191,7 +192,7 @@ def main():
             class_results.append(metrics)
             print("\nFold metrics:")
             for k, v in metrics.items():
-                print(f"{k:>10}: {v:.4f}")
+                print(f"{k:>12}: {v:.4f}")
                 
             # Save fold metrics
             with open(fold_dir / "evaluation_metrics.json", "w") as f:
@@ -200,7 +201,8 @@ def main():
         # Calculate class-level aggregates
         if class_results:
             aggregated = {}
-            for metric in ["accuracy", "precision", "recall", "f1", "auc"]:
+            for metric in ["accuracy", "precision", "recall", 
+                          "f1_binary", "f1_macro", "auc"]:
                 values = [r[metric] for r in class_results]
                 aggregated[f"{metric}_mean"] = np.mean(values)
                 aggregated[f"{metric}_std"] = np.std(values)
@@ -213,8 +215,11 @@ def main():
                 json.dump(aggregated, f, indent=4)
                 
             print(f"\nAggregated metrics for {class_name}:")
-            for k, v in aggregated.items():
-                print(f"{k:>15}: {v:.4f} ± {aggregated[k.replace('_mean', '_std')]:.4f}")
+            for k in ["accuracy", "precision", "recall", 
+                     "f1_binary", "f1_macro", "auc"]:
+                mean = aggregated[f"{k}_mean"]
+                std = aggregated[f"{k}_std"]
+                print(f"{k:>12}: {mean:.4f} ± {std:.4f}")
 
     # Save final summary
     summary_path = checkpoints_root / "evaluation_summary.json"
