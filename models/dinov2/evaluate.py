@@ -18,33 +18,33 @@ from tqdm import tqdm
 
 # Recreate necessary components from training script
 class MultiCropWrapper(torch.nn.Module):
-    """Wrapper to apply model to multiple crops."""
     def __init__(self, backbone, head):
         super().__init__()
         self.backbone = backbone
-        self.head = head
+        self.new_head = head  # Changed name to match checkpoint key
 
     def forward(self, x):
-        return self.head(self.backbone(x))
+        return self.new_head(self.backbone(x))
 
 class Head(torch.nn.Module):
-    """Projection head"""
     def __init__(self, in_dim, out_dim, hidden_dim=512, bottleneck_dim=256, norm_last_layer=True):
         super().__init__()
-        self.layers = torch.nn.Sequential(
+        self.mlp = torch.nn.Sequential(  # Changed name to match checkpoint
             torch.nn.Linear(in_dim, hidden_dim),
             torch.nn.GELU(),
             torch.nn.Linear(hidden_dim, bottleneck_dim),
             torch.nn.LayerNorm(bottleneck_dim),
-            torch.nn.Linear(bottleneck_dim, out_dim, bias=False),
+        )
+        self.last_layer = torch.nn.utils.weight_norm(  # Changed structure
+            torch.nn.Linear(bottleneck_dim, out_dim, bias=False)
         )
         if norm_last_layer:
-            self.layers[-1].weight.data = torch.nn.functional.normalize(
-                self.layers[-1].weight.data, p=2, dim=1
-            )
+            self.last_layer.weight_g.data.fill_(1)  # Match training configuration
 
     def forward(self, x):
-        return self.layers(x)
+        x = self.mlp(x)
+        x = self.last_layer(x)
+        return x
 
 def compute_embeddings(model, data_loader, device="cuda"):
     """Compute embeddings using model backbone"""
