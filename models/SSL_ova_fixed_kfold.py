@@ -66,7 +66,7 @@ class UnifiedExperimentRunner:
         if self.architecture.startswith('simclr'):
             return SimCLR(backbone_name='resnet18')
         elif self.architecture.startswith('dino'):
-            return DINO(architecture='resnet18', use_projection_head=True)
+            return DINO(architecture='resnet18')
         elif self.architecture.startswith('vit'):
             return ViTDINO(architecture='vit_b_16')
         elif self.architecture.startswith('swin'):
