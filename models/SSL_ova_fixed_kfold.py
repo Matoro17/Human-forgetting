@@ -24,13 +24,15 @@ from utils.normalization import mean_std_for_symlinks
 from utils.plot import plot_loss, plot_acc, plot_confusion_matrix
 
 # Configuration
-K_FOLDS = 1
+K_FOLDS = 5
 BATCH_SIZE = 32
 NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", 50))
 EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10))
 EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
 CLASSES = [
-    '0_Amiloidose'
+    '0_Amiloidose','1_Normal','2_Esclerose_Pura_Sem_Crescente',
+    '3_Hipercelularidade','4_Hipercelularidade_Pura_Sem_Crescente',
+    '5_Crescent','6_Membranous','7_Sclerosis','8_Podocytopathy'
 ]
 ARCHITECTURES = [
     # 'simclr_resnet18',
@@ -41,7 +43,7 @@ ARCHITECTURES = [
 load_dotenv()
 # This dataset doesn't have class balance
 BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
-RESULTS_DIR = os.getenv("RESULTS_DIR", "./check_fold0")
+RESULTS_DIR = os.getenv("RESULTS_DIR", "./resulst_dino_resnet18_5folds")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Initialize logging
@@ -64,7 +66,7 @@ class UnifiedExperimentRunner:
         if self.architecture.startswith('simclr'):
             return SimCLR(backbone_name='resnet18')
         elif self.architecture.startswith('dino'):
-            return DINO(architecture='resnet18')
+            return DINO(architecture='resnet18', use_projection_head=True)
         elif self.architecture.startswith('vit'):
             return ViTDINO(architecture='vit_b_16')
         elif self.architecture.startswith('swin'):
@@ -161,11 +163,12 @@ class UnifiedExperimentRunner:
 
         # Save metrics
         with open(os.path.join(save_dir, 'metrics.txt'), 'w') as f:
+            f.write(f"Accuracy: {metrics['accuracy']:.4f}\n")
+            f.write(f"F1 Macro: {metrics['f1_macro']:.4f}\n")
+            f.write(f"F1 Positive: {metrics['f1_positive']:.4f}\n")
             f.write(f"Class: {class_name}\n")
             f.write(f"Architecture: {self.architecture}\n")
             f.write(f"Fold: {fold}\n")
-            f.write(f"Accuracy: {metrics['accuracy']:.4f}\n")
-            f.write(f"F1 Score: {metrics['f1']:.4f}\n")
             f.write(f"Training Time: {time:.2f}s\n")
             # f.write(f"CO2 Emissions: {emissions:.4f}kg\n")
 
@@ -180,12 +183,16 @@ class UnifiedExperimentRunner:
             fold_metrics = self._run_single_fold(class_name, fold)
             class_metrics.append(fold_metrics)
         
-        # Aggregate results
-        self.results[class_name] = {
+        aggregated = {
             'avg_accuracy': np.mean([m['accuracy'] for m in class_metrics]),
-            'avg_f1': np.mean([m['f1'] for m in class_metrics]),
-            # 'total_co2': np.sum([m['co2_emissions'] for m in class_metrics])
+            'std_accuracy': np.std([m['accuracy'] for m in class_metrics]),
+            'avg_f1_macro': np.mean([m['f1_macro'] for m in class_metrics]),
+            'std_f1_macro': np.std([m['f1_macro'] for m in class_metrics]),
+            'avg_f1_positive': np.mean([m['f1_positive'] for m in class_metrics]),
+            'std_f1_positive': np.std([m['f1_positive'] for m in class_metrics]),
         }
+        
+        self.results[class_name] = aggregated
 
     def run_full_experiment(self):
         for class_name in CLASSES:
