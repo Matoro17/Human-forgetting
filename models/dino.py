@@ -54,11 +54,11 @@ class DINOHead(nn.Module):
     def __init__(self, in_dim, out_dim=256, hidden_dim=2048):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
+            nn.Linear(in_dim, hidden_dim, bias=False),
             nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim, bias=False),
             nn.GELU(),
-            nn.Linear(hidden_dim, out_dim),
+            nn.Linear(hidden_dim, out_dim, bias=False),
         )
         
     def forward(self, x):
@@ -101,7 +101,7 @@ class DINOTrainer:
         self.teacher.requires_grad_(False)
         
         # DINO parameters
-        self.center = torch.zeros(1, 256, device=device)
+        self.center = torch.zeros(256, device=device)
         self.ema_alpha = 0.996
 
         log_message(self.log_filepath, "DINO Trainer initialized")
@@ -111,8 +111,9 @@ class DINOTrainer:
         log_message(self.log_filepath, f"Log file: {log_filepath}")
 
     def _update_teacher(self, momentum):
-        for param_q, param_k in zip(self.model.parameters(), self.teacher.parameters()):
-            param_k.data.mul_(momentum).add_(param_q.data, alpha=1 - momentum)
+        with torch.no_grad():
+            for param_q, param_k in zip(self.model.parameters(), self.teacher.parameters()):
+                param_k.data.mul_(momentum).add_((1 - momentum) * param_q.detach().data)
 
     def train(self, train_loader, num_epochs):
         self.model.train()
@@ -124,7 +125,7 @@ class DINOTrainer:
         
         for epoch in range(num_epochs):
             epoch_loss = 0
-            momentum = 0.5 * (1. + math.cos(math.pi * epoch / num_epochs)) * self.ema_alpha
+            momentum = 1 - (1 - self.ema_alpha) * (math.cos(math.pi * epoch / num_epochs) + 1) / 2
             log_message(self.log_filepath, f"\nEpoch {epoch+1}/{num_epochs} - Teacher momentum: {momentum:.4f}")
             avg_epoch_loss = epoch_loss / len(train_loader)
             loss_history.append(avg_epoch_loss)
@@ -140,26 +141,34 @@ class DINOTrainer:
                 # Teacher forward with momentum update
                 with torch.no_grad():
                     self._update_teacher(momentum)
-                    teacher_global1 = self.teacher(global_views[0])
-                    teacher_global2 = self.teacher(global_views[1])
                     
-                    # Update and apply center
-                    self.center = self.center * 0.9 + 0.1 * (teacher_global1.mean(0) + teacher_global2.mean(0))/2
-                    teacher_global1 = (teacher_global1 - self.center) / 0.04
-                    teacher_global2 = (teacher_global2 - self.center) / 0.04
+                    # Get both global teacher outputs
+                    t_global1 = self.teacher(global_views[0])
+                    t_global2 = self.teacher(global_views[1])
+                    
+                    # Update center (detach for safety)
+                    self.center = self.center * 0.9 + 0.1 * (t_global1.mean(dim=0) + t_global2.mean(dim=0)).detach()/2
+                    
+                    # Apply centering and temperature to teacher outputs
+                    t_global1 = (t_global1 - self.center) / 0.04  # Paper uses 0.04 temperature
+                    t_global2 = (t_global2 - self.center) / 0.04
 
                 # Calculate loss
                 loss = 0
                 for i, s_out in enumerate(student_out):
-                    if i < 2:
-                        t_probs = F.softmax([teacher_global1, teacher_global2][i], dim=-1)
-                    else:
-                        avg_teacher = (teacher_global1 + teacher_global2) / 2
-                        t_probs = F.softmax(avg_teacher, dim=-1)
+                    if i < 2:  # Global views
+                        teacher_target = [t_global1, t_global2][i]
+                    else:       # Local views
+                        teacher_target = (t_global1 + t_global2) / 2  # Average teacher for locals
                     
-                    student_log_probs = F.log_softmax(s_out / 0.1, dim=-1)
-                    loss += -torch.mean(torch.sum(t_probs * student_log_probs, dim=-1))
-
+                    # CORRECTED Loss Calculation with Averaging
+                    loss += F.kl_div(
+                        F.log_softmax(s_out / 0.1, dim=-1),  # Student temp 0.1
+                        F.softmax(teacher_target, dim=-1),
+                        reduction='batchmean'
+                    )
+                
+                loss /= len(student_out)
                 # Optimization step
                 self.optimizer.zero_grad()
                 loss.backward()
