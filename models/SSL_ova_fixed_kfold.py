@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
 # Import all model implementations
-from dino import DINO, DINOTrainer, get_transform as dino_transform, log_message, save_metrics_to_txt
+from dino import DINO, DINOTrainer, log_message, save_metrics_to_txt
 from dino import MultiCropTransform
 from vitdino import ViTDINO, ViTTrainer, get_transform as vit_transform
 from simclr import SimCLR, SimCLRTrainer, get_transform as simclr_transform
