@@ -176,9 +176,9 @@ class DINOTrainer:
                 
                 epoch_loss += loss.item()
                 
-                if (batch_idx+1) % 50 == 0:
-                    log_message(self.log_filepath, 
-                              f"Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}")
+                # if (batch_idx+1) % 50 == 0:
+                #     log_message(self.log_filepath, 
+                #               f"Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}")
 
             avg_epoch_loss = epoch_loss / len(train_loader)
             loss_history.append(avg_epoch_loss)
@@ -255,34 +255,34 @@ class DINOTrainer:
         log_message(self.log_filepath, "\nFine-tuning completed")
         return avg_loss
 
-def evaluate(self, test_loader):
-    self.model.eval()
-    y_true, y_pred = [], []
-    
-    log_message(self.log_filepath, "\nStarting evaluation on test set")
-    
-    with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(test_loader):
-            x = x.to(self.device)
-            logits = self.model(x)
-            preds = torch.argmax(logits, dim=1).cpu()
-            y_true.extend(y.numpy())
-            y_pred.extend(preds.numpy())
-            
-    accuracy = accuracy_score(y_true, y_pred)
-    f1_macro = f1_score(y_true, y_pred, average='macro')
-    f1_positive = f1_score(y_true, y_pred, average='binary')  # Positive class F1
-    cm = confusion_matrix(y_true, y_pred)
-    
-    log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
-    log_message(self.log_filepath, f"F1 Positive: {f1_positive:.4f}")
-    
-    return {
-        'accuracy': accuracy,
-        'f1_macro': f1_macro,
-        'f1_positive': f1_positive,
-        'confusion_matrix': cm
-    }
+    def evaluate(self, test_loader):
+        self.model.eval()
+        y_true, y_pred = [], []
+        
+        log_message(self.log_filepath, "\nStarting evaluation on test set")
+        
+        with torch.no_grad():
+            for batch_idx, (x, y) in enumerate(test_loader):
+                x = x[0].to(self.device) 
+                logits = self.model(x)
+                preds = torch.argmax(logits, dim=1).cpu()
+                y_true.extend(y.numpy())
+                y_pred.extend(preds.numpy())
+                
+        accuracy = accuracy_score(y_true, y_pred)
+        f1_macro = f1_score(y_true, y_pred, average='macro')
+        f1_positive = f1_score(y_true, y_pred, average='binary')  # Positive class F1
+        cm = confusion_matrix(y_true, y_pred)
+        
+        log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
+        log_message(self.log_filepath, f"F1 Positive: {f1_positive:.4f}")
+        
+        return {
+            'accuracy': accuracy,
+            'f1_macro': f1_macro,
+            'f1_positive': f1_positive,
+            'confusion_matrix': cm
+        }
 
 def log_message(log_filepath, message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
