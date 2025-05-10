@@ -5,4 +5,4 @@
 #SBATCH -o slurm.%N.%j.out # STDOUT
 #SBATCH -e slurm.%N.%j.err # STDERR
 
-python3 -u /home/gabrielazevedo/Human-forgetting/models/SSL_ova_fixed_kfold.py
+python3 -u /home/gabrielazevedo/Human-forgetting/models/SSL_ova_fixed_kfold_simclr.py
