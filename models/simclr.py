@@ -172,14 +172,20 @@ class SimCLRTrainer:
                 y_true.extend(y.numpy())
                 y_pred.extend(preds.numpy())
         
-        metrics = {
-            'f1': f1_score(y_true, y_pred, average='binary'),  # Focus on positive class (label=1)
-            'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='binary'),
-            'recall': recall_score(y_true, y_pred, average='binary'),
-            'confusion_matrix': confusion_matrix(y_true, y_pred)
+        accuracy = accuracy_score(y_true, y_pred)
+        f1_macro = f1_score(y_true, y_pred, average='macro')
+        f1_positive = f1_score(y_true, y_pred, average='binary')  # Positive class F1
+        cm = confusion_matrix(y_true, y_pred)
+        
+        log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
+        log_message(self.log_filepath, f"F1 Positive: {f1_positive:.4f}")
+        
+        return {
+            'accuracy': accuracy,
+            'f1_macro': f1_macro,
+            'f1_positive': f1_positive,
+            'confusion_matrix': cm
         }
-        return metrics
 
 def get_transform():
     return transforms.Compose([
