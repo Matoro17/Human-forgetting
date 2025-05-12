@@ -177,8 +177,8 @@ class SimCLRTrainer:
         f1_positive = f1_score(y_true, y_pred, average='binary')  # Positive class F1
         cm = confusion_matrix(y_true, y_pred)
         
-        log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
-        log_message(self.log_filepath, f"F1 Positive: {f1_positive:.4f}")
+        # log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
+        # log_message(self.log_filepath, f"F1 Positive: {f1_positive:.4f}")
         
         return {
             'accuracy': accuracy,
