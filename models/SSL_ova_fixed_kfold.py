@@ -41,9 +41,23 @@ ARCHITECTURES = [
 
 # Environment setup
 load_dotenv()
-# This dataset doesn't have class balance
-BASE_DATA_DIR = os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/fsl/")
-RESULTS_DIR = os.getenv("RESULTS_DIR", "./resulst_dino_resnet18_5folds")
+import argparse
+parser = argparse.ArgumentParser(description="Run DINO binary classification experiments.")
+parser.add_argument("--data_dir", 
+                    type=str, 
+                    default=os.getenv("DATASET_DIR", "/home/alexsandro/pgcc/data/mestrado_Alexsandro/cross_validation/csl/"), 
+                    help="Path to the base dataset directory (containing class/fold subdirs)")
+parser.add_argument("--results_dir", 
+                    type=str, 
+                    default=os.getenv("RESULTS_DIR", "./results_dino_binary"), 
+                    help="Path to save experiment results, logs, and plots")
+# Adicione outros argumentos aqui se necessário (ex: --positive_class)
+
+args = parser.parse_args()
+
+BASE_DATA_DIR = args.data_dir
+RESULTS_DIR = args.results_dir
+print(f"Using {BASE_DATA_DIR}")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Initialize logging
