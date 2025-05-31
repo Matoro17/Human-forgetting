@@ -97,11 +97,22 @@ class SimCLRTrainer:
             epoch_start = time.time()
             total_loss = 0
             for x, _ in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
-                x = torch.cat([x, torch.flip(x, dims=[-1])], dim=0).to(self.device)
-                _, z_i = self.model(x[:len(x) // 2])
-                _, z_j = self.model(x[len(x) // 2:])
+                print(f"Batch input shape: {x.shape}")
+                # Reshape the batch to merge the two views into the batch dimension
+                batch_size = x.size(0)
+                x = x.view(-1, *x.shape[2:]).to(self.device)  # Reshape to [2*batch_size, C, H, W]
+                
+                # Forward pass through the model
+                _, z = self.model(x)
+                
+                # Split the projections into the two views
+                z_i = z[:batch_size]
+                z_j = z[batch_size:]
+                
+                # Compute loss
                 loss = self.model.nt_xent_loss(z_i, z_j)
                 
+                # Backward pass and optimization
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -126,37 +137,57 @@ class SimCLRTrainer:
                     break
         return self.loss_history
 
-    def fine_tune(self, train_loader, num_classes, epochs):
+    def fine_tune(self, train_loader, num_classes, epochs, log_filepath=None, patience=5, delta=0.001):
         self.acc_history = []
-        # Ensure the classification head matches the backbone's output dimension
+
+        # Update classification head
         self.model.classification_head = nn.Linear(self.model.feature_dim, num_classes).to(self.device)
         self.optimizer = Adam([
             {'params': self.model.backbone.parameters(), 'lr': 1e-4},
             {'params': self.model.classification_head.parameters(), 'lr': 1e-3}
         ])
-        
+
         criterion = nn.CrossEntropyLoss()
         self.model.train()
         start_time = time.time()
-        
+
+        best_loss = float('inf')
+        counter = 0
+
         for epoch in range(epochs):
             total_loss = 0
             for x, y in tqdm(train_loader, desc=f"Fine-tune Epoch {epoch+1}/{epochs}"):
+                # Fix input shape if needed
+                if x.ndim == 5:
+                    x = x[:, 0, :, :, :]  # Take first view
+
                 x, y = x.to(self.device), y.to(self.device)
                 h, _ = self.model(x)
                 logits = self.model.classification_head(h)
                 loss = criterion(logits, y)
-                
+
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                
+
                 total_loss += loss.item()
-            
+
             avg_loss = total_loss / len(train_loader)
             self.acc_history.append(avg_loss)
-            log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
-        
+
+            if log_filepath:
+                log_message(log_filepath, f"Fine-tune Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
+
+            # Early stopping
+            if avg_loss + delta < best_loss:
+                best_loss = avg_loss
+                counter = 0
+            else:
+                counter += 1
+                if counter >= patience:
+                    print(f"Early stopping at epoch {epoch+1}")
+                    break
+
         self.fine_tune_time = time.time() - start_time
         return self.acc_history
 
