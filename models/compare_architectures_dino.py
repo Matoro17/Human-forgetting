@@ -54,9 +54,9 @@ DEFAULT_RESULTS_DIR = os.getenv("RESULTS_DIR", "./results_dino_multi_arch_compar
 # List of binary classification tasks to run (based on top-level folder names in data_dir)
 BINARY_TASKS = [
     "0_Amiloidose"
-    # , "1_Normal", "2_Esclerose_Pura_Sem_Crescente",
-    # "3_Hipercelularidade", "4_Hipercelularidade_Pura_Sem_Crescente",
-    # "5_Crescent", "6_Membranous", "7_Sclerosis", "8_Podocytopathy"
+    , "1_Normal", "2_Esclerose_Pura_Sem_Crescente",
+    "3_Hipercelularidade", "4_Hipercelularidade_Pura_Sem_Crescente",
+    "5_Crescent", "6_Membranous", "7_Sclerosis", "8_Podocytopathy"
 ]
 
 # --- Architectures to Compare ---
@@ -64,10 +64,10 @@ ARCHITECTURES_TO_COMPARE = [
     'resnet18',
     'resnet50',
     'resnet101',
-    'vit_b_16',
-    'swin_t',
-    'swin_s',
-    'swin_b'
+    # 'vit_b_16',
+    # 'swin_t',
+    # 'swin_s',
+    # 'swin_b'
 ]
 
 # --- Helper Functions ---
