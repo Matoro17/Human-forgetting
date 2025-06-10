@@ -158,7 +158,7 @@ class UnifiedExperimentRunner:
         trainer.train(train_loader, NUM_EPOCHS)
         
         # Supervised fine-tuning
-        trainer.finetune(train_loader, num_classes=2, epochs=NUM_EPOCHS)
+        trainer.finetune(train_loader,val_loader=val_loader, num_classes=2, epochs=NUM_EPOCHS)
         
         # Evaluation
         # set_seeds(42)
