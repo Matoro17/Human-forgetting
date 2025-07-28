@@ -123,8 +123,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir", help="Path to dataset (e.g., dataset-mestrado-Gabriel)")
     parser.add_argument("--folds", type=int, default=5)
-    parser.add_argument("--output_csv", type=str, default="kfold_symlinks.csv")
+    parser.add_argument("--output_csv", type=str, default=None)
     args = parser.parse_args()
+
+    # Set default output path inside data_dir if not provided
+    if args.output_csv is None:
+        args.output_csv = os.path.join(args.data_dir, "kfold_symlinks.csv")
 
     samples = collect_nested_samples(args.data_dir)
 
