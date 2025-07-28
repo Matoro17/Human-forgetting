@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 from datetime import datetime
 import os
+import timm
 
 EARLY_STOPPING_PATIENCE = int(os.getenv("EARLY_STOPPING_PATIENCE", 10)) # Aumentei um pouco a paciência
 EARLY_STOPPING_DELTA = float(os.getenv("EARLY_STOPPING_DELTA", 0.001))
@@ -88,12 +89,17 @@ class DINO(nn.Module):
     def __init__(self, architecture='resnet18', out_dim=65536):
         super().__init__()
         self.architecture = architecture
-        if architecture not in models.__dict__:
-            raise ValueError(f"Arquitetura '{architecture}' não encontrada em torchvision.models")
-            
-        self.backbone = models.__dict__[architecture](weights=models.ResNet18_Weights.DEFAULT)
-        self.in_dim = self.backbone.fc.in_features
-        self.backbone.fc = nn.Identity()
+        try:
+            if architecture in models.__dict__:
+                self.backbone = models.__dict__[architecture](weights='DEFAULT')
+                self.in_dim = self.backbone.fc.in_features
+                self.backbone.fc = nn.Identity()
+            else:
+                self.backbone = timm.create_model(architecture, pretrained=True, num_classes=0, global_pool='avg')
+                self.in_dim = self.backbone.num_features
+        except Exception as e:
+            raise ValueError(f"Erro ao carregar arquitetura '{architecture}': {e}")
+
         
         self.projector = DINOHead(self.in_dim, out_dim=out_dim)
         self.classifier = None # Será adicionado no fine-tuning
@@ -297,7 +303,7 @@ class DINOTrainer:
         
         log_message(self.log_filepath, "\nFine-tuning completed")
 
-    def evaluate(self, test_loader):
+    def evaluate(self, test_loader, num_classes):
         self.model.eval()
         y_true, y_pred = [], []
         
@@ -307,10 +313,8 @@ class DINOTrainer:
             for x, y in test_loader:
                 if x.dim() == 5:
                     input_image = x[:, 0].to(self.device)
-                else: # Caso o dataset já retorne 4D, o código continua funcionando
+                else:
                     input_image = x.to(self.device)
-                # CORREÇÃO: Trata a entrada como um tensor único
-                # y = y.to(self.device)
                 
                 logits = self.model(input_image)
                 preds = torch.argmax(logits, dim=1).cpu()
@@ -318,20 +322,24 @@ class DINOTrainer:
                 y_true.extend(y.numpy())
                 y_pred.extend(preds.numpy())
                 
+        # --- MÉTRICAS ATUALIZADAS ---
         accuracy = accuracy_score(y_true, y_pred)
-        f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
-        f1_positive = f1_score(y_true, y_pred, average='binary', pos_label=1, zero_division=0)
+        # F1-Micro (global, equivalente à acurácia)
+        f1_micro = f1_score(y_true, y_pred, average='micro', zero_division=0)
+        # F1-Score por classe
+        f1_per_class = f1_score(y_true, y_pred, average=None, labels=np.arange(num_classes), zero_division=0)
         cm = confusion_matrix(y_true, y_pred)
         
-        log_message(self.log_filepath, f"Accuracy: {accuracy:.4f}")
-        log_message(self.log_filepath, f"F1 Macro: {f1_macro:.4f}")
-        log_message(self.log_filepath, f"F1 Positive (class 1): {f1_positive:.4f}")
+        log_message(self.log_filepath, f"Accuracy (F1-Micro): {f1_micro:.4f}")
+        # Exibe o F1 de cada classe
+        for i, f1 in enumerate(f1_per_class):
+            log_message(self.log_filepath, f"  - F1-Score Classe {i}: {f1:.4f}")
         log_message(self.log_filepath, f"Confusion Matrix:\n{cm}")
         
         return {
             'accuracy': accuracy,
-            'f1_macro': f1_macro,
-            'f1_positive': f1_positive,
+            'f1_micro': f1_micro,
+            'f1_per_class': f1_per_class,
             'confusion_matrix': cm
         }
 
