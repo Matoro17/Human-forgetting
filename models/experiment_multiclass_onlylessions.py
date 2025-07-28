@@ -26,14 +26,14 @@ from dino import DINO, DINOTrainer, MultiCropTransform, log_message
 
 # --- CONFIGURAÇÕES DO EXPERIMENTO ATUALIZADAS ---
 CONFIG = {
-    'DATA_DIR': './dataset-mestrado-Gabriel', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
-    'OUTPUT_DIR': './experiment_results_vit', # Nova pasta de saída
-    'CSV_PATH': './dataset-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
+    'DATA_DIR': '../dataset/dataset-mestrado-Gabriel', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
+    'OUTPUT_DIR': './experiment_results_resnet_onlyLessions', # Nova pasta de saída
+    'CSV_PATH': '../dataset/dataset-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
     'ARCHITECTURE': 'resnet18', # <-- ARQUITETURA BASE (DINO e Baseline)
     'NUM_FOLDS': 5,
     'RANDOM_STATE': 42,
-    'EPOCHS_PRETRAIN': 4, # Aumente para resultados melhores (e.g., 100+)
-    'EPOCHS_FINETUNE': 4,
+    'EPOCHS_PRETRAIN': 500, # Aumente para resultados melhores (e.g., 100+)
+    'EPOCHS_FINETUNE': 100,
     'BATCH_SIZE': 32,
     'LEARNING_RATE': 0.0005,
     'CLASSES_TO_EXCLUDE': ['1_Normal'], # <-- Classe a ser ignorada em TODAS as fases
