@@ -25,8 +25,8 @@ from dino import DINO, DINOTrainer, MultiCropTransform, log_message
 # --- EXPERIMENT CONFIGURATION ---
 CONFIG = {
     'DATA_DIR': '../dataset/dataset-mestrado-Gabriel', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
-    'OUTPUT_DIR': './experiment_results_resnet_onlyLessions', # Nova pasta de saída
-    'CSV_PATH': '../dataset/dataset-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
+    'OUTPUT_DIR': './experiment_results_resnet_onlyLessions_Normal_oversample', # Nova pasta de saída
+    'CSV_PATH': '../dataset/dataset-mestrado-Gabriel/kfold_symlinks_Normal_oversample.csv',   # <-- Novo: caminho para o CSV
     'ARCHITECTURE': 'vit_base_patch16_224',          # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
     'NUM_FOLDS': 5,
     'RANDOM_STATE': 42,
@@ -34,7 +34,7 @@ CONFIG = {
     'EPOCHS_FINETUNE': 100,  # For real results, use 100+
     'BATCH_SIZE': 32,
     'LEARNING_RATE': 0.0005, # Base LR for pre-training
-    'CLASSES_TO_EXCLUDE': ['1_Normal'],
+    'CLASSES_TO_EXCLUDE': [],
     'TSNE_SAMPLES': 1000,
 }
 
