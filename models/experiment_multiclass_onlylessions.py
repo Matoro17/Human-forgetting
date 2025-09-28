@@ -24,10 +24,10 @@ from dino import DINO, DINOTrainer, MultiCropTransform, log_message
 
 # --- EXPERIMENT CONFIGURATION ---
 CONFIG = {
-    'DATA_DIR': '../dataset/dataset-mestrado-Gabriel', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
-    'OUTPUT_DIR': './experiment_results_resnet_onlyLessions_Normal_oversample', # Nova pasta de saída
-    'CSV_PATH': '../dataset/dataset-mestrado-Gabriel/kfold_symlinks_Normal_oversample.csv',   # <-- Novo: caminho para o CSV
-    'ARCHITECTURE': 'vit_base_patch16_224',          # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
+    'DATA_DIR': '../../pathospotter/datasets/dataset-mestrado-Gabriel/', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
+    'OUTPUT_DIR': './experiment_results_resnet_augmentations_dino', # Nova pasta de saída
+    'CSV_PATH': '../../pathospotter/datasets/dataset-mestrado-Gabriel/kfold_augmentations.csv',   # <-- Novo: caminho para o CSV
+    'ARCHITECTURE': 'resnet18',          # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
     'NUM_FOLDS': 5,
     'RANDOM_STATE': 42,
     'EPOCHS_PRETRAIN': 100,  # For real results, use 100+
@@ -175,15 +175,15 @@ def main():
         
         log_message(LOG_FILEPATH, f"Train samples: {len(finetune_train_dataset)}, Test samples: {len(test_dataset)}")
         
-        # Weighted sampler for imbalanced datasets during fine-tuning
-        train_labels = finetune_train_dataset.labels
-        class_counts = Counter(train_labels)
-        class_weights = {cls_idx: 1.0 / count for cls_idx, count in class_counts.items()}
-        sample_weights = [class_weights[label] for label in train_labels]
-        sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+        # # Weighted sampler for imbalanced datasets during fine-tuning
+        # train_labels = finetune_train_dataset.labels
+        # class_counts = Counter(train_labels)
+        # class_weights = {cls_idx: 1.0 / count for cls_idx, count in class_counts.items()}
+        # sample_weights = [class_weights[label] for label in train_labels]
+        # sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
         pretrain_loader = DataLoader(pretrain_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
-        finetune_train_loader = DataLoader(finetune_train_dataset, batch_size=CONFIG['BATCH_SIZE'], sampler=sampler, num_workers=4, pin_memory=True)
+        finetune_train_loader = DataLoader(finetune_train_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=False, num_workers=4, pin_memory=True)
         
         # --- DINO Training ---
