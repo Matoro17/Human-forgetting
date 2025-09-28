@@ -198,7 +198,28 @@ class DINOTrainer:
         
         log_message(self.log_filepath, f"\nStarting DINO pre-training for {num_epochs} epochs")
         
-        model_input_size = self.model.backbone.patch_embed.img_size[0]
+        # Determine model input size robustly:
+        model_input_size = None
+        # ViT-like backbones have patch_embed.img_size
+        backbone = self.model.backbone
+        if hasattr(backbone, 'patch_embed') and hasattr(backbone.patch_embed, 'img_size'):
+            try:
+                model_input_size = backbone.patch_embed.img_size[0]
+            except Exception:
+                model_input_size = None
+                # fallback to default_cfg input_size, if present (timm convention: (3, H, W))
+        if model_input_size is None:
+            try:
+                default_input = getattr(backbone, 'default_cfg', {}).get('input_size', None)
+                if default_input and len(default_input) >= 2:
+                    model_input_size = default_input[1]
+            except Exception:
+                model_input_size = None
+
+        # final fallback
+        if model_input_size is None:
+            log_message(self.log_filepath, "Could not detect backbone input size automatically — defaulting to 224")
+            model_input_size = 224
 
         for epoch in range(num_epochs):
             epoch_loss = 0.0
