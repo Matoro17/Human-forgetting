@@ -25,8 +25,8 @@ from dino import DINO, DINOTrainer, MultiCropTransform, log_message
 # --- EXPERIMENT CONFIGURATION ---
 CONFIG = {
     'DATA_DIR': '../../pathospotter/datasets/dataset-mestrado-Gabriel/', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
-    'OUTPUT_DIR': './experiment_results_resnet_augmentations_dino', # Nova pasta de saída
-    'CSV_PATH': '../../pathospotter/datasets/dataset-mestrado-Gabriel/kfold_augmentations.csv',   # <-- Novo: caminho para o CSV
+    'OUTPUT_DIR': './experiment_results_resnet_augmentations_dino_clear_dataset', # Nova pasta de saída
+    'CSV_PATH': '../../pathospotter/datasets/dataset-mestrado-Gabriel/kfold_augmentations_clear_classes.csv',   # <-- Novo: caminho para o CSV
     'ARCHITECTURE': 'resnet18',          # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
     'NUM_FOLDS': 5,
     'RANDOM_STATE': 42,
