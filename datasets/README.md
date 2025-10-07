@@ -12,6 +12,24 @@ The directory contains four CSV files used to define different dataset configura
 - **kfold_symlinks.csv** — This serves as the baseline dataset split, defining the distribution of samples across the 5 folds used during cross-validation.
 
 
+### Class Distribution in the FIOCRUZ Histopathological Image Dataset
+
+| Classe                              | Total | AZAN | HE   | PAMS | PAS  | PSI |
+|------------------------------------|:------:|:----:|:----:|:----:|:----:|:---:|
+| **Total de Amostras**              | **12524** | **1171** | **5959** | **1254** | **3537** | **7** |
+| Normal                             | 2695  | 223  | 1585 | 345  | 542  | 0 |
+| Amiloidose                         | 374   | 31   | 145  | 96   | 102  | 0 |
+| Esclerose Pura Sem Crescente       | 1481  | 233  | 672  | 104  | 472  | 0 |
+| Hipercelularidade                  | 3134  | 257  | 1890 | 0    | 987  | 0 |
+| Hipercelularidade Pura Sem Crescente | 224 | 60   | 0    | 0    | 164  | 0 |
+| Crescent                           | 1104  | 121  | 467  | 157  | 359  | 0 |
+| Membranous                         | 1539  | 136  | 712  | 324  | 367  | 0 |
+| Sclerosis                          | 617   | 0    | 276  | 122  | 219  | 0 |
+| Podocytopathy                      | 505   | 90   | 65   | 106  | 244  | 0 |
+| Acúmulo de Neutrófilos             | 713   | 0    | 486  | 0    | 175  | 52 |
+| Depósitos Hialinos                 | 94    | 14   | 51   | 0    | 29   | 0 |
+| Necrose Fibrinoide                 | 34    | 6    | 20   | 0    | 8    | 0 |
+
 ---
 
 ## 📁 Directory Structure
