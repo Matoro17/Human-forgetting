@@ -223,35 +223,55 @@ class DINOTrainer:
 
         for epoch in range(num_epochs):
             epoch_loss = 0.0
-            pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch")
+            pbar = tqdm(
+                train_loader,
+                desc=f"Epoch {epoch+1}/{num_epochs}",
+                unit="batch",
+                leave=False,
+                dynamic_ncols=True
+            )
+
             
-            for i, (views, _) in enumerate(train_loader):
+            for i, (views, _) in enumerate(pbar):  # ✅ USE pbar
                 it = len(train_loader) * epoch + i
                 momentum = momentum_schedule[it]
                 self._update_teacher(momentum)
 
                 views = [v.to(self.device, non_blocking=True) for v in views]
-                
-                global_views = views[:2] 
+
+                global_views = views[:2]
                 local_views = views[2:]
 
                 with torch.no_grad():
                     teacher_output = [self.teacher(v) for v in global_views]
-                
-                # **FIXED**: The `lv` tensor is already a batch (N,C,H,W), so no unsqueeze is needed.
-                resized_local_views = [F.interpolate(lv, size=(model_input_size, model_input_size), mode='bicubic', align_corners=False) for lv in local_views]
-                all_views_for_student = global_views + resized_local_views
 
+                resized_local_views = [
+                    F.interpolate(
+                        lv,
+                        size=(model_input_size, model_input_size),
+                        mode='bicubic',
+                        align_corners=False
+                    )
+                    for lv in local_views
+                ]
+
+                all_views_for_student = global_views + resized_local_views
                 student_output = [self.model(v) for v in all_views_for_student]
-                
+
                 loss = self.dino_loss(student_output, teacher_output)
-                
+
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                
+
                 epoch_loss += loss.item()
-                pbar.set_postfix(loss=loss.item())
+
+                pbar.set_postfix(
+                    loss=f"{loss.item():.4f}",
+                    ema=f"{momentum:.4f}"
+                )
+
+            pbar.close()
 
 
             avg_epoch_loss = epoch_loss / len(train_loader)
@@ -269,7 +289,7 @@ class DINOTrainer:
         
         log_message(self.log_filepath, "\nDINO pre-training completed")
 
-    def fine_tune(self, train_loader, num_classes, epochs):
+    def fine_tune(self, train_loader, num_classes, epochs, lr):
         log_message(self.log_filepath, "\nStarting fine-tuning phase (linear probing)")
         
         for param in self.model.parameters():
@@ -277,7 +297,11 @@ class DINOTrainer:
         
         self.model.classifier = nn.Linear(self.model.in_dim, num_classes).to(self.device)
         
-        optimizer = torch.optim.AdamW(self.model.classifier.parameters(), lr=1e-3, weight_decay=0.01)
+        optimizer = torch.optim.AdamW(
+            self.model.classifier.parameters(),
+            lr=lr,
+            weight_decay=0.01
+        )
         criterion = nn.CrossEntropyLoss()
         
         self.model.train()

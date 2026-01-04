@@ -24,14 +24,29 @@ from dino import DINO, DINOTrainer, MultiCropTransform, log_message
 
 # --- EXPERIMENT CONFIGURATION ---
 CONFIG = {
-    'DATA_DIR': '../../pathospotter/datasets/dataset-mestrado-Gabriel/', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
-    'OUTPUT_DIR': './experiment_results_resnet_baseline_dino_all_classes', # Nova pasta de saída
-    'CSV_PATH': '../../pathospotter/datasets/dataset-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
-    'ARCHITECTURE': 'resnet18',          # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
+    'DATA_DIR': '../../pathospotter/datasets/dataset-mestrados/', # <-- MUDE AQUI: Caminho para a pasta raiz dos seus dados
+    'OUTPUT_DIR': './experiment_results_resnets_backbone-comparison_baseline_dino_all_classes-Resnet18-Resnet50-Resnet101', # Nova pasta de saída
+    'CSV_PATH': '../../pathospotter/datasets/folds-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
+    # 'CSV_PATH': 'dataset-mestrado-Gabriel/kfold_link2026.csv',   # <-- Novo: caminho para o CSV
+    # 'CSV_PATH': '../../pathospotter/datasets/dataset-mestrado-Gabriel/kfold_symlinks.csv',   # <-- Novo: caminho para o CSV
+    'ARCHITECTURES': {
+        'resnet18': {
+            'pretrain_lr': 5e-4,
+            'finetune_lr': 1e-3
+        },
+        'resnet50': {
+            'pretrain_lr': 3e-4,
+            'finetune_lr': 5e-4
+        },
+        'resnet101': {
+            'pretrain_lr': 2e-4,
+            'finetune_lr': 3e-4
+        }
+    },        # <-- Model to use (e.g., 'vit_base_patch16_224', 'swin_base_patch4_window7_224')
     'NUM_FOLDS': 5,
     'RANDOM_STATE': 42,
-    'EPOCHS_PRETRAIN': 100,  # For real results, use 100+
-    'EPOCHS_FINETUNE': 100,  # For real results, use 100+
+    'EPOCHS_PRETRAIN': 50,  # For real results, use 100+
+    'EPOCHS_FINETUNE': 50,  # For real results, use 100+
     'BATCH_SIZE': 32,
     'LEARNING_RATE': 0.0005, # Base LR for pre-training
     'CLASSES_TO_EXCLUDE': [],
@@ -153,69 +168,102 @@ def main():
     baseline_results = []
     best_f1_micro = -1.0
     
-    for fold in range(CONFIG['NUM_FOLDS']):
-        log_message(LOG_FILEPATH, f"\n{'='*20} FOLD {fold}/{CONFIG['NUM_FOLDS']-1} {'='*20}")
-        
-        # --- Datasets and Dataloaders ---
-        pretrain_dataset = CustomDatasetFromCSV(
-            csv_file=CONFIG['CSV_PATH'], fold=fold, split='train',
-            transform=MultiCropTransform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
-            data_dir=CONFIG['DATA_DIR']
-        )
-        finetune_train_dataset = CustomDatasetFromCSV(
-            csv_file=CONFIG['CSV_PATH'], fold=fold, split='train',
-            transform=CustomDatasetFromCSV.get_default_transform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
-            data_dir=CONFIG['DATA_DIR']
-        )
-        test_dataset = CustomDatasetFromCSV(
-            csv_file=CONFIG['CSV_PATH'], fold=fold, split='test',
-            transform=CustomDatasetFromCSV.get_default_transform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
-            data_dir=CONFIG['DATA_DIR']
-        )
-        
-        log_message(LOG_FILEPATH, f"Train samples: {len(finetune_train_dataset)}, Test samples: {len(test_dataset)}")
-        
-        # # Weighted sampler for imbalanced datasets during fine-tuning
-        # train_labels = finetune_train_dataset.labels
-        # class_counts = Counter(train_labels)
-        # class_weights = {cls_idx: 1.0 / count for cls_idx, count in class_counts.items()}
-        # sample_weights = [class_weights[label] for label in train_labels]
-        # sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    all_results = {}
 
-        pretrain_loader = DataLoader(pretrain_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
-        finetune_train_loader = DataLoader(finetune_train_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
-        test_loader = DataLoader(test_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=False, num_workers=4, pin_memory=True)
-        
-        # --- DINO Training ---
-        dino_model = DINO(architecture=CONFIG['ARCHITECTURE'])
-        dino_trainer = DINOTrainer(dino_model, device=DEVICE, base_lr=CONFIG['LEARNING_RATE'], log_filepath=LOG_FILEPATH)
-        
-        log_message(LOG_FILEPATH, f"Starting DINO pre-training for Fold {fold}")
-        dino_trainer.train(pretrain_loader, num_epochs=CONFIG['EPOCHS_PRETRAIN'])
-        
-        torch.save(dino_trainer.model.state_dict(), os.path.join(PRETRAINED_DIR, f"dino_pretrained_fold_{fold}.pth"))
-        
-        log_message(LOG_FILEPATH, f"Starting DINO fine-tuning for Fold {fold}")
-        dino_trainer.fine_tune(finetune_train_loader, num_classes=num_classes, epochs=CONFIG['EPOCHS_FINETUNE'])
-        
-        log_message(LOG_FILEPATH, f"Evaluating DINO model for Fold {fold}")
-        fold_results = dino_trainer.evaluate(test_loader, num_classes=num_classes)
-        dino_results.append(fold_results)
+    for architecture, hparams in CONFIG['ARCHITECTURES'].items():
+        log_message(LOG_FILEPATH, f"\n{'#'*25}")
+        log_message(LOG_FILEPATH, f"Running experiment for backbone: {architecture}")
+        log_message(LOG_FILEPATH, f"{'#'*25}\n")
 
-        if fold == 1:
-            log_message(LOG_FILEPATH, "Generating t-SNE plot for Fold 1...")
-            tsne_filename = os.path.join(CONFIG['OUTPUT_DIR'], f"tsne_dino_{CONFIG['ARCHITECTURE'].lower()}_finetuned.png")
-            generate_tsne_plot(dino_trainer.model, test_loader, DEVICE, f"t-SNE (DINO-{CONFIG['ARCHITECTURE']} After Fine-Tuning)", tsne_filename, CONFIG['TSNE_SAMPLES'], class_names)
-            log_message(LOG_FILEPATH, f"t-SNE plot saved to {tsne_filename}")
+        CONFIG['ARCHITECTURE'] = architecture
 
-        if fold_results['f1_micro'] > best_f1_micro:
-            best_f1_micro = fold_results['f1_micro']
-            torch.save(dino_trainer.model.state_dict(), os.path.join(CONFIG['OUTPUT_DIR'], f"best_dino_{CONFIG['ARCHITECTURE'].lower()}_model.pth"))
-            log_message(LOG_FILEPATH, f"New best model saved with F1-Micro: {best_f1_micro:.4f}")
+        dino_results = []
+    
+        for fold in range(CONFIG['NUM_FOLDS']):
+            log_message(LOG_FILEPATH, f"\n{'='*20} FOLD {fold}/{CONFIG['NUM_FOLDS']-1} {'='*20}")
+            
+            # --- Datasets and Dataloaders ---
+            pretrain_dataset = CustomDatasetFromCSV(
+                csv_file=CONFIG['CSV_PATH'], fold=fold, split='train',
+                transform=MultiCropTransform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
+                data_dir=CONFIG['DATA_DIR']
+            )
+            finetune_train_dataset = CustomDatasetFromCSV(
+                csv_file=CONFIG['CSV_PATH'], fold=fold, split='train',
+                transform=CustomDatasetFromCSV.get_default_transform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
+                data_dir=CONFIG['DATA_DIR']
+            )
+            test_dataset = CustomDatasetFromCSV(
+                csv_file=CONFIG['CSV_PATH'], fold=fold, split='test',
+                transform=CustomDatasetFromCSV.get_default_transform(), classes_to_exclude=CONFIG['CLASSES_TO_EXCLUDE'],
+                data_dir=CONFIG['DATA_DIR']
+            )
+            
+            log_message(LOG_FILEPATH, f"Train samples: {len(finetune_train_dataset)}, Test samples: {len(test_dataset)}")
+            
+            # # Weighted sampler for imbalanced datasets during fine-tuning
+            # train_labels = finetune_train_dataset.labels
+            # class_counts = Counter(train_labels)
+            # class_weights = {cls_idx: 1.0 / count for cls_idx, count in class_counts.items()}
+            # sample_weights = [class_weights[label] for label in train_labels]
+            # sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
-        # --- Baseline Training ---
-        baseline_fold_results = train_baseline_model(finetune_train_loader, test_loader, num_classes, CONFIG['EPOCHS_FINETUNE'], DEVICE, LOG_FILEPATH)
-        baseline_results.append(baseline_fold_results)
+            pretrain_loader = DataLoader(pretrain_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
+            finetune_train_loader = DataLoader(finetune_train_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=True, num_workers=4, pin_memory=True)
+            test_loader = DataLoader(test_dataset, batch_size=CONFIG['BATCH_SIZE'], shuffle=False, num_workers=4, pin_memory=True)
+            
+            # --- DINO Training ---
+            dino_model = DINO(architecture=architecture)
+            dino_trainer = DINOTrainer(
+                dino_model,
+                device=DEVICE,
+                base_lr=hparams['pretrain_lr'],
+                log_filepath=LOG_FILEPATH
+            )
+            
+            log_message(LOG_FILEPATH, f"Starting DINO pre-training for Fold {fold}")
+            dino_trainer.train(pretrain_loader, num_epochs=CONFIG['EPOCHS_PRETRAIN'])
+            
+            torch.save(dino_trainer.model.state_dict(), os.path.join(PRETRAINED_DIR, f"dino_pretrained_fold_{fold}.pth"))
+            
+            log_message(LOG_FILEPATH, f"Starting DINO fine-tuning for Fold {fold}")
+            dino_trainer.fine_tune(
+                finetune_train_loader,
+                num_classes=num_classes,
+                epochs=CONFIG['EPOCHS_FINETUNE'],
+                lr=hparams['finetune_lr']
+            )
+            
+            log_message(LOG_FILEPATH, f"Evaluating DINO model for Fold {fold}")
+            fold_results = dino_trainer.evaluate(test_loader, num_classes=num_classes)
+            dino_results.append(fold_results)
+
+            if fold == 1:
+                log_message(LOG_FILEPATH, "Generating t-SNE plot for Fold 1...")
+                tsne_filename = os.path.join(CONFIG['OUTPUT_DIR'], f"tsne_dino_{CONFIG['ARCHITECTURE'].lower()}_finetuned.png")
+                generate_tsne_plot(dino_trainer.model, test_loader, DEVICE, f"t-SNE (DINO-{CONFIG['ARCHITECTURE']} After Fine-Tuning)", tsne_filename, CONFIG['TSNE_SAMPLES'], class_names)
+                log_message(LOG_FILEPATH, f"t-SNE plot saved to {tsne_filename}")
+
+            if fold_results['f1_micro'] > best_f1_micro:
+                best_f1_micro = fold_results['f1_micro']
+                torch.save(dino_trainer.model.state_dict(), os.path.join(CONFIG['OUTPUT_DIR'], f"best_dino_{CONFIG['ARCHITECTURE'].lower()}_model.pth"))
+                log_message(LOG_FILEPATH, f"New best model saved with F1-Micro: {best_f1_micro:.4f}")
+
+            # # --- Baseline Training ---
+            # baseline_fold_results = train_baseline_model(finetune_train_loader, test_loader, num_classes, CONFIG['EPOCHS_FINETUNE'], DEVICE, LOG_FILEPATH)
+            # baseline_results.append(baseline_fold_results)
+        
+        f1_micros = [r['f1_micro'] for r in dino_results]
+        f1_per_class = np.array([r['f1_per_class'] for r in dino_results])
+
+        all_results[architecture] = {
+            'f1_micro': f1_micros,
+            'mean': np.mean(f1_micros),
+            'std': np.std(f1_micros),
+            'f1_per_class_mean': np.mean(f1_per_class, axis=0)
+        }
+        log_message(LOG_FILEPATH, f"\nBackbone: {architecture}")
+        log_message(LOG_FILEPATH, f"F1-Micro: {np.mean(f1_micros):.4f} ± {np.std(f1_micros):.4f}")
         
     # --- Final Analysis ---
     log_message(LOG_FILEPATH, f"\n\n{'='*20} FINAL RESULTS {'='*20}")
@@ -228,23 +276,38 @@ def main():
     for i, c in enumerate(class_names):
         log_message(LOG_FILEPATH, f"  - Avg F1 '{c}': {mean_f1_per_class_dino[i]:.4f}")
 
-    base_f1_micros = [r['f1_micro'] for r in baseline_results]
-    log_message(LOG_FILEPATH, f"\n--- Baseline ({CONFIG['ARCHITECTURE']} from Scratch) ---")
-    log_message(LOG_FILEPATH, f"Avg F1-Micro: {np.mean(base_f1_micros):.4f} ± {np.std(base_f1_micros):.4f}")
+    # base_f1_micros = [r['f1_micro'] for r in baseline_results]
+    # log_message(LOG_FILEPATH, f"\n--- Baseline ({CONFIG['ARCHITECTURE']} from Scratch) ---")
+    # log_message(LOG_FILEPATH, f"Avg F1-Micro: {np.mean(base_f1_micros):.4f} ± {np.std(base_f1_micros):.4f}")
 
-    # Wilcoxon Statistical Test
-    log_message(LOG_FILEPATH, "\n--- Significance Test (Wilcoxon on F1-Micro) ---")
-    try:
-        stat, p_value = wilcoxon(dino_f1_micros, base_f1_micros)
-        log_message(LOG_FILEPATH, f"Statistic: {stat:.4f}, P-value: {p_value:.4f}")
-        if p_value < 0.05:
-            log_message(LOG_FILEPATH, "Result: The difference is statistically significant.")
-        else:
-            log_message(LOG_FILEPATH, "Result: The difference is NOT statistically significant.")
-    except ValueError as e:
-        log_message(LOG_FILEPATH, f"Could not perform Wilcoxon test: {e}")
+    # --- Statistical Significance Tests (Wilcoxon paired by fold) ---
+    log_message(LOG_FILEPATH, "\n--- Statistical Significance Tests (Wilcoxon, paired by fold) ---")
 
-    log_message(LOG_FILEPATH, "\nExperiment concluded.")
+    architectures = list(all_results.keys())
+
+    for i in range(len(architectures)):
+        for j in range(i + 1, len(architectures)):
+            arch_a = architectures[i]
+            arch_b = architectures[j]
+
+            f1_a = all_results[arch_a]['f1_micro']
+            f1_b = all_results[arch_b]['f1_micro']
+
+            try:
+                stat, p_value = wilcoxon(f1_a, f1_b)
+
+                log_message(
+                    LOG_FILEPATH,
+                    f"{arch_a} vs {arch_b} | "
+                    f"stat={stat:.4f}, p-value={p_value:.4f} "
+                    f"{'(SIGNIFICANT)' if p_value < 0.05 else '(NOT significant)'}"
+                )
+
+            except ValueError as e:
+                log_message(
+                    LOG_FILEPATH,
+                    f"{arch_a} vs {arch_b} | Wilcoxon test failed: {e}"
+                )
 
 if __name__ == '__main__':
     main()
