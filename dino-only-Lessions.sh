@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #SBATCH -p batch # partition (queue)
-#SBATCH --gpus 1 # change G by the number of GPU to use
+#SBATCH --gpus 2 # change G by the number of GPU to use
 #SBATCH -o 2026-slurm.%N.%j.out # STDOUT
 #SBATCH -e 2026-slurm.%N.%j.err # STDERR
 
